@@ -1,0 +1,22 @@
+{
+  "name": "webgl-webgpu-demo",
+  "version": "0.1.0",
+  "description": "Showcases und Performance-Vergleiche zwischen WebGL und WebGPU (Thesis)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  },
+  "dependencies": {
+    "@types/stats.js": "^0.17.3",
+    "gl-matrix": "^3.4.3",
+    "lil-gui": "^0.19.2",
+    "stats.js": "^0.17.0"
+  }
+}

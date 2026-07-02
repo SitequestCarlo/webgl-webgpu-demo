@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>01 · Shading-Modelle (WebGL2)</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: #0f1115;
+        color: #e6e8eb;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        overflow: hidden;
+      }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; width: 100%; height: 100%; }
+      /* lil-gui: Panel breiter, Name-Labels schmaler -> Dropdowns breiter. */
+      .lil-gui.root {
+        --width: 280px;
+        --name-width: 33%;
+        position: absolute;
+        top: 8px;
+        right: 8px;
+      }
+      /* Dropdown füllt den Widget-Bereich (gleiche Breite wie z.B. Slider+Zahl). */
+      .lil-gui .controller.option select { width: 100%; }
+      .lil-gui .controller.option .display { width: 100%; }
+      /* Booleans: Checkbox an den rechten Rand (justify-between wie andere Controls). */
+      .lil-gui .controller.boolean .widget { justify-content: flex-end; }
+      a.back {
+        position: absolute;
+        left: 8px;
+        bottom: 8px;
+        color: #9aa2af;
+        text-decoration: none;
+        font-size: 0.85rem;
+        background: rgba(20, 22, 26, 0.7);
+        padding: 0.3rem 0.6rem;
+        border-radius: 6px;
+      }
+      a.back:hover { color: #4f9cff; }
+      #results {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        min-width: 180px;
+        white-space: pre;
+        font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+        font-size: 0.78rem;
+        color: #cdd3dc;
+        background: rgba(20, 22, 26, 0.85);
+        border: 1px solid #2c313a;
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="gl"></canvas>
+      <a class="back" href="../../index.html">&larr; Übersicht</a>
+      <div id="results"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
