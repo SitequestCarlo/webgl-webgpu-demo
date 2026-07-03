@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>02 &middot; CNC-Abtragsimulation (WebGPU)</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: #0d0e12;
+        color: #e6e8eb;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        overflow: hidden;
+      }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+      canvas:active { cursor: grabbing; }
+
+      /* lil-gui */
+      .lil-gui.root {
+        --width: 260px;
+        --name-width: 45%;
+        position: absolute;
+        top: 8px;
+        right: 8px;
+      }
+      .lil-gui .controller.boolean .widget { justify-content: flex-end; }
+
+      #progress {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        color: #9aa2af;
+        font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+        font-size: 0.78rem;
+        background: rgba(13, 14, 18, 0.80);
+        padding: 0.3rem 0.65rem;
+        border-radius: 6px;
+        border: 1px solid #2c313a;
+        pointer-events: none;
+      }
+
+      a.back {
+        position: absolute;
+        left: 8px;
+        bottom: 8px;
+        color: #9aa2af;
+        text-decoration: none;
+        font-size: 0.85rem;
+        background: rgba(13, 14, 18, 0.80);
+        padding: 0.3rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid #2c313a;
+      }
+      a.back:hover { color: #4f9cff; border-color: #4f9cff; }
+
+      #hint {
+        position: absolute;
+        left: 50%;
+        bottom: 12px;
+        transform: translateX(-50%);
+        color: #6b7280;
+        font-size: 0.75rem;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas"></canvas>
+      <div id="progress">Initialisierung...</div>
+      <a class="back" href="../../index.html">&larr; Übersicht</a>
+      <div id="hint">Ziehen = Kamera drehen &nbsp;&bull;&nbsp; Scroll = Zoom</div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
