@@ -35,6 +35,7 @@ export default defineConfig({
         "09-instancing":  resolve(__dirname, "showcases/09-instancing/index.html"),
         "09-in-gl":       resolve(__dirname, "showcases/09-instancing/webgl/index.html"),
         "09-in-gpu":      resolve(__dirname, "showcases/09-instancing/webgpu/index.html"),
+        "10-cnc-sim":     resolve(__dirname, "showcases/10-cnc-sim/index.html"),
       },
     },
   },

@@ -34,7 +34,7 @@ hljs.registerLanguage('wgsl', () => ({
 export interface CodeFile {
   name: string;
   path: string;
-  language: 'glsl' | 'wgsl' | 'typescript';
+  language: 'glsl' | 'wgsl' | 'typescript' | 'markdown';
   content: string;
 }
 
@@ -42,7 +42,7 @@ export interface ShowcaseEntry {
   id: string;
   num: string;
   title: string;
-  category: 'rendering' | 'performance';
+  category: 'rendering' | 'performance' | 'compute' | 'overview';
   tags: string[];
   webgl?: string;
   webgpu?: string;
@@ -75,6 +75,12 @@ const descriptionFiles = import.meta.glob<string>(
   { as: 'raw', eager: true },
 );
 
+// Globale README.md (Projekt-Root)
+const globalReadme = import.meta.glob<string>(
+  '/README.md',
+  { as: 'raw', eager: true },
+);
+
 type Api = 'webgl' | 'webgpu';
 
 // ---------------------------------------------------------------------------
@@ -86,25 +92,38 @@ let currentApi: Api = 'webgl';
 let currentFiles: CodeFile[] = [];
 let selectedFileIndex = 0;
 
-// Gibt die geordneten Shader-Dateien + optional main.ts für ein Showcase+API zurück.
+// Gibt die Dateiliste für ein Showcase zurück.
+// Erste Datei ist immer README.md (aus description.md oder globalReadme).
 function getFiles(entry: ShowcaseEntry, api: Api): CodeFile[] {
-  if (!entry.shaderBase || !entry.fileOrder) return [];
+  const files: CodeFile[] = [];
+
+  // README.md prepend
+  if (entry.id === '00-readme') {
+    const content = globalReadme['/README.md'] ?? '# README\n\nKein Inhalt gefunden.';
+    files.push({ name: 'README.md', path: '/README.md', language: 'markdown', content });
+    return files;
+  }
+
+  const descPath = `/showcases/${entry.id}/description.md`;
+  const descContent = descriptionFiles[descPath];
+  if (descContent) {
+    files.push({ name: 'README.md', path: descPath, language: 'markdown', content: descContent });
+  }
+
+  // Shader + main.ts
+  if (!entry.shaderBase || !entry.fileOrder) return files;
   const names = api === 'webgl' ? entry.fileOrder.webgl : entry.fileOrder.webgpu;
-  if (!names || names.length === 0) return [];
+  if (!names || names.length === 0) return files;
   const subdir = api === 'webgl' ? 'gl' : 'gpu';
 
-  // main.ts-Pfad aus der HTML-URL ableiten:
-  // './showcases/01-shading/index.html' → '/showcases/01-shading/main.ts'
-  // './showcases/03-raytracer/webgl/index.html' → '/showcases/03-raytracer/webgl/main.ts'
   const htmlUrl = api === 'webgl' ? entry.webgl : entry.webgpu;
   const mainTsPath = htmlUrl
     ? htmlUrl.replace('./', '/').replace('/index.html', '/main.ts')
     : '';
 
-  return names.map(name => {
+  for (const name of names) {
     let path: string;
     let content: string;
-
     if (name === 'main.ts') {
       path    = mainTsPath;
       content = mainTsSources[path] ?? `// Datei nicht gefunden: ${path}`;
@@ -112,12 +131,12 @@ function getFiles(entry: ShowcaseEntry, api: Api): CodeFile[] {
       path    = `${entry.shaderBase}/${subdir}/${name}`;
       content = shaderSources[path] ?? `// Datei nicht gefunden: ${path}`;
     }
-
     const ext = name.split('.').pop() ?? 'glsl';
     const language: CodeFile['language'] =
       ext === 'wgsl' ? 'wgsl' : ext === 'ts' ? 'typescript' : 'glsl';
-    return { name, path, language, content };
-  });
+    files.push({ name, path, language, content });
+  }
+  return files;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,25 +147,38 @@ const frame       = document.getElementById('showcase-frame') as HTMLIFrameEleme
 const sidebarList = document.getElementById('sidebar-list')!;
 const titleEl     = document.getElementById('showcase-title')!;
 const tagsEl      = document.getElementById('showcase-tags')!;
-const descEl      = document.getElementById('tab-description')!;
 const codeBlock   = document.getElementById('code-block') as HTMLElement;
 const fileListEl  = document.getElementById('file-list')!;
-const btnWebGL    = document.getElementById('btn-webgl')!;
-const btnWebGPU   = document.getElementById('btn-webgpu')!;
-const tabBtns     = document.querySelectorAll<HTMLButtonElement>('.tab-btn');
-const tabContents = document.querySelectorAll<HTMLElement>('.tab-pane');
+const btnWebGL    = document.getElementById('btn-webgl')  as HTMLButtonElement;
+const btnWebGPU   = document.getElementById('btn-webgpu') as HTMLButtonElement;
 const emptyState  = document.getElementById('empty-state')!;
 const headerArea  = document.getElementById('showcase-header')!;
 const apiWarning  = document.getElementById('api-warning')!;
+const infoPanel   = document.getElementById('info-panel')!;
+const codeView    = document.getElementById('code-view')!;
 
 // ---------------------------------------------------------------------------
 // Sidebar aufbauen
 // ---------------------------------------------------------------------------
 
 function buildSidebar(): void {
+  // "00 README" als eigenstaendigen Top-Level-Eintrag
+  const readmeEntry = registry.find(e => e.id === '00-readme');
+  if (readmeEntry) {
+    const btn = document.createElement('button');
+    btn.className = 'sidebar-item sidebar-readme';
+    btn.dataset.id = readmeEntry.id;
+    btn.innerHTML = `
+      <span class="sidebar-num">${readmeEntry.num}</span>
+      <span class="sidebar-title">${readmeEntry.title}</span>`;
+    btn.addEventListener('click', () => navigate(readmeEntry.id));
+    sidebarList.appendChild(btn);
+  }
+
   const groups: { title: string; items: ShowcaseEntry[] }[] = [
-    { title: 'Rendering', items: registry.filter(e => e.category === 'rendering') },
-    { title: 'Performance', items: registry.filter(e => e.category === 'performance') },
+    { title: 'Rendering',    items: registry.filter(e => e.category === 'rendering') },
+    { title: 'Performance',  items: registry.filter(e => e.category === 'performance') },
+    { title: 'Compute',      items: registry.filter(e => e.category === 'compute') },
   ];
 
   for (const group of groups) {
@@ -191,37 +223,49 @@ function navigate(id: string): void {
   // Leerzustand verstecken
   emptyState.style.display = 'none';
   headerArea.style.display = 'flex';
-  frame.style.display = 'block';
-  document.getElementById('info-panel')!.style.display = 'flex';
+  infoPanel.style.display  = 'flex';
+
+  // iframe: nur anzeigen wenn ein Showcase-URL existiert
+  const hasFrame = !!(entry.webgl || entry.webgpu);
+  frame.style.display    = hasFrame ? 'block' : 'none';
+  infoPanel.style.flex   = hasFrame ? '' : '1';  // bei reiner README voll expandieren
+  (document.getElementById('code-split') as HTMLElement).style.height = hasFrame ? '' : '100%';
+
+  // Auto-Switch zu WebGPU falls Showcase kein WebGL hat
+  if (!entry.webgl && entry.webgpu && currentApi === 'webgl') {
+    currentApi = 'webgpu';
+    btnWebGL.classList.remove('active');
+    btnWebGPU.classList.add('active');
+    document.documentElement.dataset.api = 'webgpu';
+  }
+
+  // API-Buttons: für reine Doku-Einträge beide ausblenden
+  const isDocOnly = !entry.webgl && !entry.webgpu;
+  btnWebGL.disabled  = isDocOnly || !entry.webgl;
+  btnWebGPU.disabled = isDocOnly || !entry.webgpu;
+  btnWebGL.style.opacity  = (isDocOnly || !entry.webgl)  ? '0.35' : '';
+  btnWebGPU.style.opacity = (isDocOnly || !entry.webgpu) ? '0.35' : '';
 
   // Showcase laden
   loadFrame(entry);
 
-  // Beschreibung aus Markdown-Datei laden und rendern
-  const mdPath = `/showcases/${entry.id}/description.md`;
-  const mdSource = descriptionFiles[mdPath] ?? `*Keine Beschreibung verfügbar.*`;
-  descEl.innerHTML = marked.parse(mdSource) as string;
-
-  // Shader-Dateien aus dem Build-Zeit-Bundle laden (synchron)
+  // Dateien laden (README.md + Shader)
   currentFiles      = getFiles(entry, currentApi);
   selectedFileIndex = 0;
   renderFileList(currentFiles);
   if (currentFiles.length > 0) selectFile(0);
   else {
-    fileListEl.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:.78rem">Keine Shader-Dateien vorhanden.</div>';
+    fileListEl.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:.78rem">Keine Dateien vorhanden.</div>';
     codeBlock.textContent = '';
   }
 
-  // API-Warnung
-  if (currentApi === 'webgpu' && !entry.webgpu) {
-    apiWarning.textContent = 'Kein WebGPU-Showcase für dieses Beispiel vorhanden.';
+  // API-Warnung (falls man manuell auf eine nicht verfuegbare API umschaltet)
+  if (!isDocOnly && ((currentApi === 'webgpu' && !entry.webgpu) || (currentApi === 'webgl' && !entry.webgl))) {
+    apiWarning.textContent = `Kein ${currentApi === 'webgpu' ? 'WebGPU' : 'WebGL'}-Showcase für dieses Beispiel vorhanden.`;
     apiWarning.style.display = 'block';
   } else {
     apiWarning.style.display = 'none';
   }
-
-  // Tab zurück auf Beschreibung
-  switchTab('description');
 }
 
 function loadFrame(entry: ShowcaseEntry): void {
@@ -239,15 +283,26 @@ function renderFileList(files: CodeFile[]): void {
     fileListEl.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:.75rem">Keine Dateien</div>';
     return;
   }
-  const label = document.createElement('div');
-  label.className = 'file-section-label';
-  label.textContent = currentApi === 'webgl' ? 'GLSL Shader' : 'WGSL Shader';
-  fileListEl.appendChild(label);
+  // Abschnittsbeschriftung: README separat, dann Shader-Typ
+  const hasMarkdown = files.some(f => f.language === 'markdown');
+  const hasShaders  = files.some(f => f.language !== 'markdown');
+  if (hasMarkdown) {
+    const lbl = document.createElement('div');
+    lbl.className = 'file-section-label'; lbl.textContent = 'Dokumentation';
+    fileListEl.appendChild(lbl);
+  }
   files.forEach((file, i) => {
+    // Trennlabel vor erstem Shader nach README
+    if (i > 0 && file.language !== 'markdown' && files[i-1].language === 'markdown' && hasShaders) {
+      const lbl = document.createElement('div');
+      lbl.className = 'file-section-label';
+      lbl.textContent = currentApi === 'webgl' ? 'GLSL Shader' : 'WGSL Shader';
+      fileListEl.appendChild(lbl);
+    }
     const btn = document.createElement('button');
     btn.className = 'file-item' + (i === selectedFileIndex ? ' active' : '');
-    const extClass = `file-ext-${file.language}`;
-    btn.innerHTML = `<span class="${extClass}">◆</span>${file.name}`;
+    const extClass = file.language === 'markdown' ? 'file-ext-md' : `file-ext-${file.language}`;
+    btn.innerHTML = `<span class="${extClass}">&#9670;</span>${file.name}`;
     btn.title = file.path;
     btn.addEventListener('click', () => selectFile(i));
     fileListEl.appendChild(btn);
@@ -261,13 +316,32 @@ function selectFile(index: number): void {
   fileListEl.querySelectorAll('.file-item').forEach((el, i) => {
     el.classList.toggle('active', i === index);
   });
-  const lang = file.language === 'wgsl' ? 'wgsl' : file.language === 'typescript' ? 'typescript' : 'glsl';
-  try {
-    codeBlock.innerHTML = hljs.highlight(file.content, { language: lang }).value;
-  } catch {
-    codeBlock.textContent = file.content;
+
+  if (file.language === 'markdown') {
+    // Markdown: gerendertes HTML im code-view anzeigen
+    const pre = codeView.querySelector('pre')!;
+    pre.style.display = 'none';
+    let mdDiv = codeView.querySelector<HTMLDivElement>('.md-view');
+    if (!mdDiv) {
+      mdDiv = document.createElement('div');
+      mdDiv.className = 'md-view';
+      codeView.appendChild(mdDiv);
+    }
+    mdDiv.style.display = 'block';
+    mdDiv.innerHTML = marked.parse(file.content) as string;
+  } else {
+    // Code: Syntax-Highlighting
+    const pre = codeView.querySelector('pre')!;
+    pre.style.display = '';
+    const mdDiv = codeView.querySelector<HTMLDivElement>('.md-view');
+    if (mdDiv) mdDiv.style.display = 'none';
+    const lang = file.language === 'wgsl' ? 'wgsl' : file.language === 'typescript' ? 'typescript' : 'glsl';
+    try {
+      codeBlock.innerHTML = hljs.highlight(file.content, { language: lang }).value;
+    } catch {
+      codeBlock.textContent = file.content;
+    }
   }
-  switchTab('code');
 }
 
 // ---------------------------------------------------------------------------
@@ -278,18 +352,12 @@ function setApi(api: Api): void {
   currentApi = api;
   btnWebGL.classList.toggle('active', api === 'webgl');
   btnWebGPU.classList.toggle('active', api === 'webgpu');
+  if (!currentId) {
+    btnWebGL.disabled  = false; btnWebGL.style.opacity  = '';
+    btnWebGPU.disabled = false; btnWebGPU.style.opacity = '';
+  }
   document.documentElement.dataset.api = api;
-
   if (currentId) navigate(currentId);
-}
-
-// ---------------------------------------------------------------------------
-// Tab-System
-// ---------------------------------------------------------------------------
-
-function switchTab(name: string): void {
-  tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  tabContents.forEach(p => p.classList.toggle('active', p.dataset.tab === name));
 }
 
 // ---------------------------------------------------------------------------
@@ -301,14 +369,13 @@ buildSidebar();
 btnWebGL.addEventListener('click', () => setApi('webgl'));
 btnWebGPU.addEventListener('click', () => setApi('webgpu'));
 
-tabBtns.forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab ?? 'description'));
-});
-
 // URL-Hash-Routing
 const hash = location.hash.replace('#', '');
 if (hash && registry.find(e => e.id === hash)) {
   navigate(hash);
+} else {
+  // Standard: globale README anzeigen
+  navigate('00-readme');
 }
 
 // Hash beim Navigieren setzen

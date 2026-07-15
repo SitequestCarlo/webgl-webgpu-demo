@@ -1,7 +1,7 @@
 // pathtracer.glsl – Monte-Carlo Path Tracer (WebGL2 / GLSL ES 3.00)
 // Showcase 04: preserveDrawingBuffer + Alpha-Blending als Akkumulations-Hack.
 // Szene: Cornell Box – 4 Waende + Boden, kein Dach, 2 AABB-Boxen.
-// 2 Bounces – minimal fuer ANGLE/D3D11 (nur mit blendFunc, nicht blendFuncSeparate).
+// 2 Bounces – minimal für ANGLE/D3D11 (nur mit blendFunc, nicht blendFuncSeparate).
 #version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;

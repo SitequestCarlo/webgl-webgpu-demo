@@ -226,7 +226,7 @@ html, body {
   background: #0a0c10;
 }
 
-/* Info-Panel */
+/* Info-Panel (kein Tab-System mehr) */
 #info-panel {
   display: none;
   flex-direction: column;
@@ -234,69 +234,6 @@ html, body {
   overflow: hidden;
   background: var(--sidebar-bg);
 }
-
-/* Tab-Leiste */
-.tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  padding: 0 12px;
-  gap: 4px;
-}
-
-.tab-btn {
-  padding: 8px 14px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: color 0.15s;
-  margin-bottom: -1px;
-}
-
-.tab-btn:hover { color: var(--text); }
-.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-/* Tab-Inhalte */
-.tab-pane {
-  display: none;
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  scrollbar-width: thin;
-  scrollbar-color: #2a2f3a transparent;
-}
-
-.tab-pane.active { display: block; }
-
-/* Beschreibungs-Tab: gerendertes Markdown */
-#tab-description {
-  font-size: 0.85rem;
-  line-height: 1.65;
-  color: var(--text-muted);
-}
-#tab-description h1, #tab-description h2 { font-size: 1rem; color: var(--text); margin: 0 0 .5rem; font-weight: 600; }
-#tab-description h3 { font-size: 0.92rem; color: var(--text); margin: 1rem 0 .4rem; font-weight: 600; }
-#tab-description h4 { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin: .9rem 0 .3rem; text-transform: uppercase; letter-spacing: .05em; }
-#tab-description p  { margin: 0 0 .65rem; }
-#tab-description ul, #tab-description ol { padding-left: 1.2rem; margin: 0 0 .65rem; }
-#tab-description li { margin-bottom: .25rem; }
-#tab-description strong { color: var(--text); font-weight: 600; }
-#tab-description em    { font-style: italic; }
-#tab-description code  { font-family: var(--code-font); font-size: 0.78rem; background: var(--surface2); padding: 1px 5px; border-radius: 3px; color: #a8c4ff; }
-#tab-description pre   { background: #0d1117; border-radius: var(--radius); padding: 10px 14px; overflow-x: auto; margin: .6rem 0; }
-#tab-description pre code { background: none; padding: 0; color: #e6edf3; font-size: .73rem; line-height: 1.6; }
-#tab-description table { width: 100%; border-collapse: collapse; margin: .6rem 0; font-size: .8rem; }
-#tab-description th, #tab-description td { padding: .3rem .6rem; border-bottom: 1px solid var(--border); text-align: left; }
-#tab-description th   { color: var(--text-muted); font-weight: 500; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
-#tab-description blockquote { border-left: 3px solid var(--accent); margin: .6rem 0; padding: .4rem .75rem; background: var(--surface2); border-radius: 0 var(--radius) var(--radius) 0; }
-#tab-description blockquote p { margin: 0; color: var(--text-muted); font-size: .82rem; }
-
-/* Code-Viewer mit File-List */
-#tab-code { padding: 0; overflow: hidden; }
-#code-split { display: flex; height: 100%; }
 
 #file-list {
   width: 185px;
@@ -343,8 +280,44 @@ html, body {
 .file-ext-wgsl  { color: #7ee787; }
 .file-ext-ts    { color: #f0883e; }
 
+/* Code-Viewer */
+#code-split { display: flex; height: 100%; flex: 1; overflow: hidden; }
+
 #code-view { flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #2a2f3a transparent; }
 #code-view pre { margin: 0; padding: 14px 16px; font-family: var(--code-font); font-size: 0.74rem; line-height: 1.65; background: #0d1117; min-height: 100%; }
+
+/* Markdown-Viewer (README.md Ansicht) */
+.md-view {
+  padding: 20px 24px;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  background: #0d1117;
+  min-height: 100%;
+}
+.md-view h1 { font-size: 1.15rem; color: var(--text); margin: 0 0 .6rem; font-weight: 600; }
+.md-view h2 { font-size: 1rem; color: var(--text); margin: 1.2rem 0 .5rem; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
+.md-view h3 { font-size: 0.92rem; color: var(--text); margin: 1rem 0 .4rem; font-weight: 600; }
+.md-view h4 { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin: .9rem 0 .3rem; text-transform: uppercase; letter-spacing: .05em; }
+.md-view p  { margin: 0 0 .65rem; }
+.md-view ul, .md-view ol { padding-left: 1.3rem; margin: 0 0 .65rem; }
+.md-view li { margin-bottom: .25rem; }
+.md-view strong { color: var(--text); font-weight: 600; }
+.md-view em     { font-style: italic; }
+.md-view code   { font-family: var(--code-font); font-size: 0.78rem; background: var(--surface2); padding: 1px 5px; border-radius: 3px; color: #a8c4ff; }
+.md-view pre    { background: var(--surface2); border-radius: var(--radius); padding: 10px 14px; overflow-x: auto; margin: .6rem 0; }
+.md-view pre code { background: none; padding: 0; color: #e6edf3; font-size: .73rem; line-height: 1.6; }
+.md-view table  { width: 100%; border-collapse: collapse; margin: .6rem 0; font-size: .8rem; }
+.md-view th, .md-view td { padding: .3rem .6rem; border-bottom: 1px solid var(--border); text-align: left; }
+.md-view th     { color: var(--text-muted); font-weight: 500; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+.md-view blockquote { border-left: 3px solid var(--accent); margin: .6rem 0; padding: .4rem .75rem; background: var(--surface2); border-radius: 0 var(--radius) var(--radius) 0; }
+.md-view blockquote p { margin: 0; color: var(--text-muted); font-size: .82rem; }
+
+/* README-Farbe in der Dateiliste */
+.file-ext-md { color: #f0c674; }
+
+/* 00-README Sidebar-Item: leicht hervorgehoben */
+.sidebar-readme { border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 
 #file-loading {
   display: flex;

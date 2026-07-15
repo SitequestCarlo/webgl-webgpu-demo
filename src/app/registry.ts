@@ -10,6 +10,13 @@
 export const registry: ShowcaseEntry[] = [
 
   {
+    id: '00-readme', num: '00', title: 'README',
+    category: 'overview' as any,
+    tags: [],
+    // Kein Showcase-URL: zeigt nur die globale README.md
+  },
+
+  {
     id: '01-shading', num: '01', title: 'Shading-Modelle',
     category: 'rendering', tags: ['Blinn-Phong', 'PBR', 'Toon', 'Flat', 'Gouraud'],
     webgl: './showcases/01-shading/index.html',
@@ -103,5 +110,15 @@ export const registry: ShowcaseEntry[] = [
     webgpu: './showcases/09-instancing/webgpu/index.html',
     shaderBase: '/showcases/09-instancing/shaders',
     fileOrder: { webgl: ['instanced.glsl', 'main.ts'], webgpu: ['instanced.wgsl', 'main.ts'] },
+  },
+
+  {
+    id: '10-cnc-sim', num: '10', title: 'CNC-Abtragsimulation',
+    category: 'compute', tags: ['Compute', 'Z-Map', 'Dexel', 'Höhenfeld', 'MSAA'],
+    webgpu: './showcases/10-cnc-sim/index.html',
+    shaderBase: '/showcases/10-cnc-sim/shaders',
+    fileOrder: {
+      webgpu: ['simulate.wgsl', 'heightfield.wgsl', 'tool.wgsl', 'main.ts'],
+    },
   },
 ];
