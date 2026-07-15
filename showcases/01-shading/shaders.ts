@@ -1,16 +1,17 @@
-// GLSL-ES-300-Shader für vier Shading-Modi. Alle nutzen dieselben
+// GLSL-ES-300-Shader für fünf Shading-Modi. Alle nutzen dieselben
 // Vertex-Attribute (Position an Location 0, Normale an Location 1) und
 // dieselben Transform-Uniforms, damit ein fairer Vergleich möglich ist.
 //
-// - none:    reine Basisfarbe, keine Beleuchtung
-// - flat:    Beleuchtung pro Vertex, mit `flat`-Interpolation -> eine Farbe
-//            pro Fläche (Provoking-Vertex)
-// - gouraud: Beleuchtung pro Vertex, Farbe wird interpoliert
-// - phong:   Beleuchtung pro Fragment mit interpolierter Vertex-Normale
+// - none:        reine Basisfarbe, keine Beleuchtung
+// - flat:        Beleuchtung pro Vertex, mit `flat`-Interpolation -> eine Farbe
+//                pro Fläche (Provoking-Vertex)
+// - gouraud:     Beleuchtung pro Vertex (Blinn-Phong), Farbe wird interpoliert
+// - phong:       Beleuchtung pro Fragment, Specular via Reflect-Vektor (klassisch)
+// - blinn-phong: Beleuchtung pro Fragment, Specular via Half-Vector (moderner Standard)
 
-export type ShadingMode = "none" | "flat" | "gouraud" | "phong";
+export type ShadingMode = "none" | "flat" | "gouraud" | "phong" | "blinn-phong";
 
-export const SHADING_MODES: ShadingMode[] = ["none", "flat", "gouraud", "phong"];
+export const SHADING_MODES: ShadingMode[] = ["none", "flat", "gouraud", "phong", "blinn-phong"];
 
 // Gemeinsamer Uniform-Block für alle Vertex-Shader.
 const VS_UNIFORMS = /* glsl */ `
@@ -20,8 +21,8 @@ uniform mat4 uProj;
 uniform mat3 uNormalMatrix;
 `;
 
-// Gemeinsame Blinn-Phong-Beleuchtungsfunktion.
-const LIGHTING_FN = /* glsl */ `
+// Uniforms + Diffuse, die beide Beleuchtungsmodelle teilen.
+const LIGHTING_COMMON = /* glsl */ `
 uniform vec3 uColor;
 uniform vec3 uLightPos;
 uniform vec3 uViewPos;
@@ -29,18 +30,36 @@ uniform vec3 uLightColor;
 uniform float uAmbient;
 uniform float uShininess;
 
-vec3 blinnPhong(vec3 N, vec3 worldPos) {
+vec3 diffuseAmbient(vec3 N, vec3 L) {
+  float diff = max(dot(N, L), 0.0);
+  return uAmbient * uColor + diff * uColor * uLightColor;
+}
+`;
+
+// Klassisches Phong: Specular über den Reflect-Vektor.
+const LIGHTING_PHONG = LIGHTING_COMMON + /* glsl */ `
+vec3 shadingPhong(vec3 N, vec3 worldPos) {
+  vec3 L = normalize(uLightPos - worldPos);
+  vec3 V = normalize(uViewPos - worldPos);
+  vec3 R = reflect(-L, N);
+  float spec = pow(max(dot(R, V), 0.0), uShininess);
+  return diffuseAmbient(N, L) + spec * uLightColor;
+}
+`;
+
+// Blinn-Phong: Specular über den Half-Vector (stabiler, heute Standard).
+const LIGHTING_BLINNPHONG = LIGHTING_COMMON + /* glsl */ `
+vec3 shadingBlinnPhong(vec3 N, vec3 worldPos) {
   vec3 L = normalize(uLightPos - worldPos);
   vec3 V = normalize(uViewPos - worldPos);
   vec3 H = normalize(L + V);
-  float diff = max(dot(N, L), 0.0);
   float spec = pow(max(dot(N, H), 0.0), uShininess);
-  vec3 ambient = uAmbient * uColor;
-  vec3 diffuse = diff * uColor * uLightColor;
-  vec3 specular = spec * uLightColor;
-  return ambient + diffuse + specular;
+  return diffuseAmbient(N, L) + spec * uLightColor;
 }
 `;
+
+// Alias für Flat und Gouraud (nutzen Blinn-Phong).
+const LIGHTING_FN = LIGHTING_BLINNPHONG.replace("shadingBlinnPhong", "blinnPhong");
 
 // Vertex-Shader, der Weltposition und Normale weiterreicht
 // (für none, flat, phong).
@@ -98,11 +117,23 @@ const FS_PHONG = /* glsl */ `#version 300 es
 precision highp float;
 in vec3 vWorldPos;
 in vec3 vNormal;
-${LIGHTING_FN}
+${LIGHTING_PHONG}
 out vec4 fragColor;
 void main() {
   vec3 N = normalize(vNormal);
-  fragColor = vec4(blinnPhong(N, vWorldPos), 1.0);
+  fragColor = vec4(shadingPhong(N, vWorldPos), 1.0);
+}
+`;
+
+const FS_BLINNPHONG = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vNormal;
+${LIGHTING_BLINNPHONG}
+out vec4 fragColor;
+void main() {
+  vec3 N = normalize(vNormal);
+  fragColor = vec4(shadingBlinnPhong(N, vWorldPos), 1.0);
 }
 `;
 
@@ -141,6 +172,7 @@ export const SHADER_SOURCES: Record<ShadingMode, ShaderSource> = {
   flat: { vertex: VS_FLAT, fragment: FS_FLAT },
   gouraud: { vertex: VS_GOURAUD, fragment: FS_GOURAUD },
   phong: { vertex: VS_PASS, fragment: FS_PHONG },
+  "blinn-phong": { vertex: VS_PASS, fragment: FS_BLINNPHONG },
 };
 
 // Uniform-Namen, die je Programm abgefragt werden (nicht vorhandene

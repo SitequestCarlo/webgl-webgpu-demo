@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: "opaque" });
 
-  const RESOLUTIONS = [128, 256, 512];
+  const RESOLUTIONS = [128, 256, 512, 1024, 2048];
   const toolpath = generateToolpath();
 
   let zmapSize = ZMAP_SIZE;

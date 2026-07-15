@@ -76,7 +76,7 @@ function uploadGeometry(geo: Geometry): GpuGeometry {
 }
 
 const params = {
-  shading: "phong" as ShadingMode,
+  shading: "blinn-phong" as ShadingMode,
   segments: 32,
   rings: 16,
   autoRotate: false,

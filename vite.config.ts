@@ -11,7 +11,6 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         "01-shading": resolve(__dirname, "showcases/01-shading/index.html"),
-        "02-cnc-sim": resolve(__dirname, "showcases/02-cnc-sim/index.html"),
       },
     },
   },
