@@ -25,6 +25,28 @@ export function createTriangle(): Geometry {
 // UV-Kugel mit einstellbarer Tessellierung. Normalen sind glatt
 // (= normalisierte Position), Flat-Shading wird im Fragment-Shader
 // über Ableitungen berechnet.
+// Einheits-Würfel: 24 Vertices (4 pro Fläche), 36 Indices.
+export function createCube(size = 1): Geometry {
+  const h = size / 2;
+  const v = [
+    // +X
+     h,-h,-h,1,0,0,  h, h,-h,1,0,0,  h, h, h,1,0,0,  h,-h, h,1,0,0,
+    // -X
+    -h,-h, h,-1,0,0, -h, h, h,-1,0,0, -h, h,-h,-1,0,0, -h,-h,-h,-1,0,0,
+    // +Y
+    -h, h,-h,0,1,0,  -h, h, h,0,1,0,  h, h, h,0,1,0,  h, h,-h,0,1,0,
+    // -Y
+    -h,-h, h,0,-1,0, -h,-h,-h,0,-1,0, h,-h,-h,0,-1,0,  h,-h, h,0,-1,0,
+    // +Z
+    -h,-h, h,0,0,1,  h,-h, h,0,0,1,  h, h, h,0,0,1,  -h, h, h,0,0,1,
+    // -Z
+     h,-h,-h,0,0,-1, -h,-h,-h,0,0,-1, -h, h,-h,0,0,-1, h, h,-h,0,0,-1,
+  ];
+  const idx: number[] = [];
+  for (let f = 0; f < 6; f++) { const b = f*4; idx.push(b,b+1,b+2,b,b+2,b+3); }
+  return { vertices: new Float32Array(v), indices: new Uint32Array(idx), vertexCount: 24, indexCount: 36 };
+}
+
 export function createUvSphere(
   radius = 1,
   segments = 32,

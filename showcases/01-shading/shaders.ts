@@ -8,10 +8,12 @@
 // - gouraud:     Beleuchtung pro Vertex (Blinn-Phong), Farbe wird interpoliert
 // - phong:       Beleuchtung pro Fragment, Specular via Reflect-Vektor (klassisch)
 // - blinn-phong: Beleuchtung pro Fragment, Specular via Half-Vector (moderner Standard)
+// - toon:        Quantisierte Beleuchtung (Stufen) + Silhouetten-Rim
+// - pbr:         Cook-Torrance Microfacet-BRDF (GGX/Schlick) mit Roughness + Metallic
 
-export type ShadingMode = "none" | "flat" | "gouraud" | "phong" | "blinn-phong";
+export type ShadingMode = "none" | "flat" | "gouraud" | "phong" | "blinn-phong" | "toon" | "pbr";
 
-export const SHADING_MODES: ShadingMode[] = ["none", "flat", "gouraud", "phong", "blinn-phong"];
+export const SHADING_MODES: ShadingMode[] = ["none", "flat", "gouraud", "phong", "blinn-phong", "toon", "pbr"];
 
 // Gemeinsamer Uniform-Block für alle Vertex-Shader.
 const VS_UNIFORMS = /* glsl */ `
@@ -162,6 +164,108 @@ void main() {
 }
 `;
 
+// ---------------------------------------------------------------------------
+// Toon: Beleuchtungsstärke in diskrete Stufen quantisiert + Silhouetten-Rim.
+// ---------------------------------------------------------------------------
+const FS_TOON = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vNormal;
+uniform vec3 uColor;
+uniform vec3 uLightPos;
+uniform vec3 uViewPos;
+uniform vec3 uLightColor;
+uniform float uAmbient;
+uniform float uToonSteps;
+out vec4 fragColor;
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 L = normalize(uLightPos - vWorldPos);
+  vec3 V = normalize(uViewPos - vWorldPos);
+
+  // Diffuse quantisiert.
+  float diff = max(dot(N, L), 0.0);
+  float stepped = floor(diff * uToonSteps) / uToonSteps;
+  vec3 color = (uAmbient + stepped) * uColor * uLightColor;
+
+  // Silhouette: Rim-Dunkel wo Normale von Kamera weg zeigt.
+  float rim = dot(N, V);
+  if (rim < 0.25) color = vec3(0.0);
+
+  fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`;
+
+// ---------------------------------------------------------------------------
+// PBR: Cook-Torrance Microfacet-BRDF
+//   D  = GGX / Trowbridge-Reitz Normal Distribution
+//   G  = Schlick-Smith Geometry Masking
+//   F  = Schlick Fresnel
+// ---------------------------------------------------------------------------
+const FS_PBR = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vNormal;
+uniform vec3 uColor;      // Albedo
+uniform vec3 uLightPos;
+uniform vec3 uViewPos;
+uniform vec3 uLightColor;
+uniform float uAmbient;
+uniform float uRoughness;
+uniform float uMetallic;
+out vec4 fragColor;
+
+const float PI = 3.14159265359;
+
+float distributionGGX(float NdotH, float roughness) {
+  float a  = roughness * roughness;
+  float a2 = a * a;
+  float d  = NdotH * NdotH * (a2 - 1.0) + 1.0;
+  return a2 / (PI * d * d);
+}
+
+float geometrySchlickGGX(float NdotX, float roughness) {
+  float r = roughness + 1.0;
+  float k = (r * r) / 8.0;
+  return NdotX / (NdotX * (1.0 - k) + k);
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+void main() {
+  vec3 N   = normalize(vNormal);
+  vec3 V   = normalize(uViewPos - vWorldPos);
+  vec3 L   = normalize(uLightPos - vWorldPos);
+  vec3 H   = normalize(V + L);
+
+  float NdotL = max(dot(N, L), 0.0);
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotH = max(dot(N, H), 0.0);
+  float HdotV = max(dot(H, V), 0.0);
+
+  // F0: Basisreflektivität. Dielektrikum = 0.04, Metall = Albedo-Farbe.
+  vec3 F0 = mix(vec3(0.04), uColor, uMetallic);
+
+  float D = distributionGGX(NdotH, uRoughness);
+  float G = geometrySchlickGGX(NdotV, uRoughness) * geometrySchlickGGX(NdotL, uRoughness);
+  vec3  F = fresnelSchlick(HdotV, F0);
+
+  // Specular Cook-Torrance.
+  vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
+
+  // Diffuse (Lambert). Metalle haben keinen diffusen Anteil (kS verbraucht alles).
+  vec3 kD = (1.0 - F) * (1.0 - uMetallic);
+  vec3 diffuse = kD * uColor / PI;
+
+  vec3 Lo = (diffuse + specular) * uLightColor * NdotL;
+  vec3 ambient = uAmbient * uColor;
+
+  fragColor = vec4(ambient + Lo, 1.0);
+}
+`;
+
 export interface ShaderSource {
   vertex: string;
   fragment: string;
@@ -173,6 +277,8 @@ export const SHADER_SOURCES: Record<ShadingMode, ShaderSource> = {
   gouraud: { vertex: VS_GOURAUD, fragment: FS_GOURAUD },
   phong: { vertex: VS_PASS, fragment: FS_PHONG },
   "blinn-phong": { vertex: VS_PASS, fragment: FS_BLINNPHONG },
+  toon: { vertex: VS_PASS, fragment: FS_TOON },
+  pbr: { vertex: VS_PASS, fragment: FS_PBR },
 };
 
 // Uniform-Namen, die je Programm abgefragt werden (nicht vorhandene
@@ -188,4 +294,7 @@ export const UNIFORM_NAMES = [
   "uLightColor",
   "uAmbient",
   "uShininess",
+  "uToonSteps",
+  "uRoughness",
+  "uMetallic",
 ] as const;

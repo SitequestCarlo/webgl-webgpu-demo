@@ -1,0 +1,26 @@
+<!doctype html><html lang="de"><head><meta charset="UTF-8"/><title>08 · N-Body Simulation – WebGL vs WebGPU</title>
+<style>:root{color-scheme:dark;--bg:#14161a;--card:#1e2127;--border:#2c313a;--muted:#9aa2af;--accent:#4f9cff}*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:#e6e8eb;line-height:1.5}
+header{padding:3rem 1.5rem 1.5rem;max-width:860px;margin:0 auto}h1{margin:0 0 .4rem;font-size:1.5rem}p.lead{color:var(--muted);margin:0}
+main{max-width:860px;margin:0 auto;padding:0 1.5rem 2rem;display:grid;gap:1rem;grid-template-columns:1fr 1fr}
+a.card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;transition:border-color .15s,transform .15s}
+a.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+a.card h2{margin:0 0 .4rem;font-size:1.1rem}a.card p{color:var(--muted);font-size:.9rem;margin:0 0 .75rem}
+.tag{display:inline-block;font-size:.72rem;padding:.1rem .5rem;border-radius:999px;background:#23303f;color:var(--accent);margin-right:.3rem}
+.tag.warn{background:#3f2323;color:#f87171}
+a.back{display:inline-block;margin:2.5rem 1.5rem 0;color:var(--muted);text-decoration:none;font-size:.85rem}a.back:hover{color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:.9rem;margin:1rem 0}th,td{text-align:left;padding:.35rem .6rem;border-bottom:1px solid var(--border)}th{color:var(--muted);font-weight:500}.better{color:#4ade80}</style></head>
+<body><a class="back" href="../../index.html">&larr; Übersicht</a>
+<header><h1>08 · N-Body Simulation</h1>
+<p class="lead">N Partikel mit gravitativer Wechselwirkung (O(N²)). Zeigt strukturellen Vorteil von Compute-Shadern.</p></header>
+<main>
+  <a class="card" href="./webgl/index.html"><h2>WebGL2</h2><p>Simulation via Texture-Ping-Pong: Fragment-Shader liest Positionen aus RGBA32F-Textur.</p><div class="tag warn">Kein Compute</div><div class="tag">WebGL2</div></a>
+  <a class="card" href="./webgpu/index.html"><h2>WebGPU</h2><p>Compute-Shader: parallele Kraftberechnung + Storage Buffer. Direkter Zugriff auf alle N Positionen.</p><div class="tag">WebGPU</div><div class="tag">Compute</div></a>
+</main>
+<div style="max-width:860px;margin:0 auto;padding:0 1.5rem 3rem">
+  <table>
+    <tr><th></th><th>WebGL2</th><th>WebGPU</th></tr>
+    <tr><td>Simulation</td><td>Fragment-Shader (Textur-Ping-Pong)</td><td class="better">Compute-Shader (Storage Buffer)</td></tr>
+    <tr><td>Zugriff auf alle N Partikel</td><td>Textur-Fetch</td><td class="better">Direkter Buffer-Zugriff</td></tr>
+    <tr><td>Max. N (interaktiv)</td><td>~512 (Fragment-Bottleneck)</td><td class="better">~4096+</td></tr>
+  </table>
+</div></body></html>

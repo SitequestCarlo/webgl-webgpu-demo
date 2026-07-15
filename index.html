@@ -74,8 +74,48 @@
     <main>
       <a class="card" href="./showcases/01-shading/index.html">
         <h2>01 &middot; Shading-Modelle</h2>
-        <span>Dreieck &amp; tessellierte Kugel mit umschaltbarem Shading: None, Flat, Gouraud, Phong.</span>
-        <div class="tag">WebGL2</div>
+        <span>Dreieck &amp; tessellierte Kugel: None, Flat, Gouraud, Phong, Blinn-Phong, Toon, PBR.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/02-pbr/index.html">
+        <h2>02 &middot; PBR Material-Grid</h2>
+        <span>6&times;6 Kugeln mit variierendem Roughness &amp; Metallic &mdash; Cook-Torrance BRDF (GGX/Schlick). WebGPU: Instanced Rendering via Storage-Buffer.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/03-raytracer/index.html">
+        <h2>03 &middot; Raytracer</h2>
+        <span>Analytischer Raytracer: Reflexion, Refraktion (Glas), harte Schatten. WebGL: Fragment-Shader. WebGPU: Compute-Shader + Frame-Akkumulation.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/04-pathtracer/index.html">
+        <h2>04 &middot; Path Tracer</h2>
+        <span>Monte-Carlo-Pfadverfolgung in der Cornell Box: indirektes Licht, weiche Schatten, Farbbluten. WebGL: Ping-Pong FBO. WebGPU: Compute + persistenter RNG.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/05-drawcalls/index.html">
+        <h2>05 &middot; Draw-Call Overhead</h2>
+        <span>N Objekte, jedes mit eigenem Draw-Call (100 – 50k). Misst API-Overhead pro Befehl. WebGPU deutlich effizienter.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/06-vertex/index.html">
+        <h2>06 &middot; Vertex Throughput</h2>
+        <span>Eine Mesh mit skalierender Polygonanzahl (10k – 2M Dreiecke). Misst Vertex-Shader-Durchsatz und GPU-Bandwidth.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/07-lights/index.html">
+        <h2>07 &middot; Fragment-Last / Multi-Light</h2>
+        <span>N Punkt-Lichtquellen (1 – 256) mit Blinn-Phong pro Fragment. WebGL: Uniform-Array. WebGPU: Storage Buffer.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/08-nbody/index.html">
+        <h2>08 &middot; N-Body Simulation</h2>
+        <span>Gravitative Wechselwirkung N² Paare. WebGL: Texture-Ping-Pong (Fragment). WebGPU: Compute-Shader mit Storage Buffer.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
+      </a>
+      <a class="card" href="./showcases/09-instancing/index.html">
+        <h2>09 &middot; Instanced Rendering</h2>
+        <span>1 Draw-Call, N Instanzen (1k – 500k). WebGL: Vertex-Buffer divisor. WebGPU: Storage Buffer via instance_index.</span>
+        <div class="tag">WebGL2</div><div class="tag" style="background:#1a2f1a;color:#4ade80">WebGPU</div>
       </a>
     </main>
   </body>

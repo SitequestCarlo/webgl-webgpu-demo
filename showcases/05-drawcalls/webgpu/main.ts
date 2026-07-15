@@ -1,0 +1,171 @@
+import { GUI } from "lil-gui";
+import { mat3, mat4, vec3 } from "gl-matrix";
+import {
+  getWebGPU, resizeWebGPUCanvas, createDepthTexture,
+  createGPUVertexBuffer, createGPUIndexBuffer, mat3ToMat4Array,
+  VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor,
+} from "../../../src/shared/webgpu";
+import { createCube } from "../../../src/shared/geometry";
+import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { BENCH_WGSL, DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/benchShaders";
+
+const canvas    = document.getElementById("gl") as HTMLCanvasElement;
+const resultsEl = document.getElementById("results") as HTMLDivElement;
+const { device, context, format } = await getWebGPU(canvas);
+
+// --- Geometrie ---------------------------------------------------------------
+
+const cube  = createCube(0.5);
+const cubeVB = createGPUVertexBuffer(device, cube.vertices);
+const cubeIB = createGPUIndexBuffer(device, cube.indices);
+
+// --- Pipelines & Bind-Group-Layouts ------------------------------------------
+
+const sceneBGL = device.createBindGroupLayout({ entries: [
+  { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+]});
+const drawBGL = device.createBindGroupLayout({ entries: [
+  { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+    buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: DRAW_UNIFORM_SIZE } },
+]});
+const layout = device.createPipelineLayout({ bindGroupLayouts: [sceneBGL, drawBGL] });
+const shader = device.createShaderModule({ code: BENCH_WGSL });
+const pipeline = device.createRenderPipeline({
+  layout,
+  vertex:   { module: shader, entryPoint: "vs_main", buffers: [VERTEX_BUFFER_LAYOUT] },
+  fragment: { module: shader, entryPoint: "fs_main", targets: [{ format }] },
+  primitive:    { topology: "triangle-list", cullMode: "back" },
+  depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+});
+
+// Szene-Uniform-Buffer: view, proj, lightPos, viewPos, lightColor+ambient, shininess
+// 4×mat4 = 128, 4×vec4 = 64, 2×f32 = 8 → 200 → 256 alloc
+const SCENE_UB_SIZE = 256;
+const sceneUB = device.createBuffer({ size: SCENE_UB_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const sceneData = new Float32Array(SCENE_UB_SIZE / 4);
+const sceneBG   = device.createBindGroup({ layout: sceneBGL, entries: [{ binding: 0, resource: { buffer: sceneUB } }] });
+
+// Draw-Uniform-Buffer: N × 256 Bytes, Dynamic Offsets
+const MAX_N = 50000;
+let drawUBSize = MAX_N * DRAW_UNIFORM_SIZE;
+let drawUB = device.createBuffer({ size: drawUBSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+let drawBG = device.createBindGroup({ layout: drawBGL, entries: [{ binding: 0, resource: { buffer: drawUB, size: DRAW_UNIFORM_SIZE } }] });
+const drawData = new Float32Array(MAX_N * DRAW_UNIFORM_SIZE / 4);
+
+// --- Szene -------------------------------------------------------------------
+
+const proj      = mat4.create();
+const view      = mat4.create();
+const model     = mat4.create();
+const normalM3  = mat3.create();
+const normalM4  = new Float32Array(16);
+const cameraPos = vec3.fromValues(0, 8, 20);
+const lightPos  = vec3.fromValues(10, 15, 10);
+mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
+
+const MAX_N_REAL = 50000;
+const posArr   = new Float32Array(MAX_N_REAL * 3);
+const colorArr = new Float32Array(MAX_N_REAL * 3);
+
+function hsl(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return [r + m, g + m, b + m];
+}
+
+function rebuildObjects(n: number): void {
+  const side = Math.ceil(Math.cbrt(n)), half = (side - 1) / 2, sp = 1.2;
+  for (let i = 0; i < n; i++) {
+    const ix = i % side, iy = Math.floor(i / side) % side, iz = Math.floor(i / side / side);
+    posArr[i*3] = (ix-half)*sp; posArr[i*3+1] = (iy-half)*sp; posArr[i*3+2] = (iz-half)*sp;
+    const [r, g, b] = hsl((i / n) * 360, 0.7, 0.5);
+    colorArr[i*3] = r; colorArr[i*3+1] = g; colorArr[i*3+2] = b;
+  }
+}
+
+// --- Params & GUI ------------------------------------------------------------
+
+const params = { n: 1000, autoRotate: true };
+let angle = 0;
+rebuildObjects(params.n);
+
+const cpuTimer  = new CpuTimer();
+const stats     = createStatsPanel(document.getElementById("app")!);
+stats.showPanel(1);
+const benchmark = new BenchmarkRun(30, 200);
+let depth = createDepthTexture(device, 1, 1);
+
+const gui = new GUI({ title: "Draw-Calls (WebGPU)" });
+gui.add(params, "n", 100, MAX_N, 100).name("N Objekte").onChange((v: number) => rebuildObjects(Math.round(v)));
+const cpuCtrl = gui.add({ cpu: "– ms" }, "cpu").name("CPU Draw-Zeit").disable();
+gui.add(params, "autoRotate").name("Rotation");
+gui.add({ run: async () => {
+  resultsEl.style.display = "block";
+  resultsEl.textContent = `Messe ${params.n} Draw-Calls ...`;
+  const r = await benchmark.start();
+  resultsEl.textContent = `[WebGPU] N=${params.n} Draw-Calls\n${formatResult(r)}\nCPU avg: ${cpuTimer.average.toFixed(2)} ms`;
+} }, "run").name("Benchmark starten");
+
+setInterval(() => { (cpuCtrl as { setValue:(v:string)=>void }).setValue(`${cpuTimer.average.toFixed(2)} ms`); }, 300);
+
+// --- Render ------------------------------------------------------------------
+
+let lastT = performance.now();
+
+function render(now: number): void {
+  const dt = (now - lastT) / 1000; lastT = now;
+  if (resizeWebGPUCanvas(canvas)) {
+    depth.destroy();
+    depth = createDepthTexture(device, canvas.width, canvas.height);
+    const a = canvas.width / Math.max(1, canvas.height);
+    mat4.perspective(proj, (50 * Math.PI) / 180, a, 0.1, 200);
+  }
+  if (params.autoRotate) angle += dt * 0.3;
+
+  const n = Math.round(params.n);
+
+  // Szene-Uniform
+  sceneData.set(view, 0); sceneData.set(proj, 16);
+  sceneData[32] = lightPos[0]; sceneData[33] = lightPos[1]; sceneData[34] = lightPos[2];
+  sceneData[36] = cameraPos[0]; sceneData[37] = cameraPos[1]; sceneData[38] = cameraPos[2];
+  sceneData[40] = 1; sceneData[41] = 0.97; sceneData[42] = 0.93; sceneData[43] = 0.1; // rgb + ambient
+  sceneData[44] = 32; // shininess
+  device.queue.writeBuffer(sceneUB, 0, sceneData);
+
+  // Draw-Uniforms (alle N, dann 1 submit)
+  cpuTimer.begin();
+  const floatsPerDraw = DRAW_UNIFORM_SIZE / 4;
+  for (let i = 0; i < n; i++) {
+    mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
+    mat4.rotateY(model, model, angle + i * 0.05);
+    mat3.normalFromMat4(normalM3, model);
+    mat3ToMat4Array(normalM3, normalM4, 0);
+    writeDrawUniform(drawData, i * floatsPerDraw, model as Float32Array, normalM4, [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]]);
+  }
+  device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
+
+  const cmd  = device.createCommandEncoder();
+  const pass = cmd.beginRenderPass(makeRenderPassDescriptor(
+    context.getCurrentTexture().createView(), depth.createView(),
+    { r: 0.06, g: 0.07, b: 0.09, a: 1 }
+  ));
+  pass.setPipeline(pipeline);
+  pass.setVertexBuffer(0, cubeVB);
+  pass.setIndexBuffer(cubeIB, "uint32");
+  pass.setBindGroup(0, sceneBG);
+  for (let i = 0; i < n; i++) {
+    pass.setBindGroup(1, drawBG, [i * DRAW_UNIFORM_SIZE]);
+    pass.drawIndexed(cube.indexCount);
+  }
+  pass.end();
+  device.queue.submit([cmd.finish()]);
+  cpuTimer.end();
+
+  stats.update();
+  benchmark.sample(now);
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>04 · Path Tracer – WebGL vs. WebGPU</title>
+    <style>
+      :root { color-scheme: dark; --bg: #14161a; --card: #1e2127; --border: #2c313a; --muted: #9aa2af; --accent: #4f9cff; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: #e6e8eb; line-height: 1.5; }
+      header { padding: 3rem 1.5rem 1.5rem; max-width: 760px; margin: 0 auto; }
+      h1 { margin: 0 0 .5rem; font-size: 1.5rem; }
+      p.lead { color: var(--muted); margin: 0 0 .25rem; }
+      main { max-width: 760px; margin: 0 auto; padding: 0 1.5rem 2rem; display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+      a.card { display: block; text-decoration: none; color: inherit; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; transition: border-color .15s, transform .15s; }
+      a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+      a.card h2 { margin: 0 0 .4rem; font-size: 1.1rem; }
+      a.card p  { color: var(--muted); font-size: .9rem; margin: 0 0 .75rem; }
+      .tag { display: inline-block; font-size: .72rem; padding: .1rem .5rem; border-radius: 999px; background: #23303f; color: var(--accent); margin-right: .3rem; }
+      a.back { display: inline-block; margin: 2.5rem 1.5rem 0; color: var(--muted); text-decoration: none; font-size: .85rem; }
+      a.back:hover { color: var(--accent); }
+      table { width: 100%; border-collapse: collapse; font-size: .9rem; margin: 1rem 0 2rem; }
+      th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
+      th { color: var(--muted); font-weight: 500; }
+      .better { color: #4ade80; }
+    </style>
+  </head>
+  <body>
+    <a class="back" href="../../index.html">&larr; Übersicht</a>
+    <header>
+      <h1>04 &middot; Path Tracer</h1>
+      <p class="lead">Cornell Box &mdash; Monte-Carlo-Pfadverfolgung mit indirekter Beleuchtung, weichen Schatten und Farbbluten.</p>
+      <p class="lead">Kamera per Maus-Drag orbitieren &middot; Scroll = Zoom &middot; Nach Kamerabewegung konvergiert das Bild progressiv.</p>
+    </header>
+    <main>
+      <a class="card" href="./webgl/index.html">
+        <h2>WebGL2</h2>
+        <p>Ping-Pong-FBO-Akkumulation. 6 Bounces. Hash-basierter RNG ohne persistenten Zustand.</p>
+        <div class="tag">WebGL2</div><div class="tag">Ping-Pong FBO</div>
+      </a>
+      <a class="card" href="./webgpu/index.html">
+        <h2>WebGPU</h2>
+        <p>Compute-Shader, Storage-Buffer-Akkumulation. 8 Bounces. Persistenter RNG-Zustand pro Pixel für bessere Konvergenz.</p>
+        <div class="tag">WebGPU</div><div class="tag">Compute</div><div class="tag">Persistenter RNG</div>
+      </a>
+    </main>
+    <div style="max-width:760px;margin:0 auto;padding:0 1.5rem">
+      <table>
+        <tr><th></th><th>WebGL2</th><th>WebGPU</th></tr>
+        <tr><td>Akkumulation</td><td>Ping-Pong FBO (2 RGBA32F-Texturen)</td><td class="better">Storage Buffer (kein FBO-Overhead)</td></tr>
+        <tr><td>Max. Bounces</td><td>6</td><td class="better">8</td></tr>
+        <tr><td>RNG-Zustand</td><td>Hash pro Frame (kein Gedächtnis)</td><td class="better">Xorshift32 pro Pixel, persistent</td></tr>
+        <tr><td>Kamera-Reset</td><td>Akkum-Buffer automatisch zurückgesetzt</td><td class="better">cmd.clearBuffer() (GPU-seitig, effizient)</td></tr>
+        <tr><td>Szene-Daten</td><td>Uniforms (limitiert)</td><td class="better">Erweiterbar via Storage Buffer + BVH</td></tr>
+      </table>
+    </div>
+  </body>
+</html>

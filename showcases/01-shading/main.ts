@@ -83,6 +83,11 @@ const params = {
   color: [0x8c / 255, 0x2d / 255, 0x82 / 255] as [number, number, number],
   ambient: 0.12,
   shininess: 48,
+  // Toon
+  toonSteps: 4,
+  // PBR
+  roughness: 0.4,
+  metallic: 0.0,
   wireframe: false,
 };
 
@@ -166,7 +171,15 @@ const lightFolder = gui.addFolder("Material / Licht");
 lightFolder.close();
 lightFolder.addColor(params, "color").name("Farbe");
 lightFolder.add(params, "ambient", 0, 1, 0.01).name("Ambient");
-lightFolder.add(params, "shininess", 1, 256, 1).name("Glanz");
+lightFolder.add(params, "shininess", 1, 256, 1).name("Glanz (Phong)");
+const toonFolder = gui.addFolder("Toon");
+toonFolder.close();
+toonFolder.add(params, "toonSteps", 2, 10, 1).name("Stufen");
+const pbrFolder = gui.addFolder("PBR");
+pbrFolder.close();
+pbrFolder.addColor(params, "color").name("Albedo");
+pbrFolder.add(params, "roughness", 0.05, 1.0, 0.01).name("Roughness");
+pbrFolder.add(params, "metallic", 0.0, 1.0, 0.01).name("Metallic");
 gui.add(params, "wireframe").name("Wireframe");
 gui.add(params, "autoRotate").name("Auto-Rotieren");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (webp)");
@@ -206,6 +219,9 @@ function render(now: number): void {
   if (uniforms.uViewPos) gl.uniform3fv(uniforms.uViewPos, cameraPos);
   if (uniforms.uAmbient) gl.uniform1f(uniforms.uAmbient, params.ambient);
   if (uniforms.uShininess) gl.uniform1f(uniforms.uShininess, params.shininess);
+  if (uniforms.uToonSteps) gl.uniform1f(uniforms.uToonSteps, params.toonSteps);
+  if (uniforms.uRoughness) gl.uniform1f(uniforms.uRoughness, params.roughness);
+  if (uniforms.uMetallic) gl.uniform1f(uniforms.uMetallic, params.metallic);
 
   const drawMode = params.wireframe ? gl.LINE_STRIP : gl.TRIANGLES;
   const halfWidth = Math.floor(canvas.width / 2);

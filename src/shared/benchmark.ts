@@ -109,3 +109,22 @@ export function formatResult(r: BenchmarkResult): string {
     `Max:     ${r.maxMs.toFixed(3)} ms`,
   ].join("\n");
 }
+
+// Misst die reine CPU-Zeit (Draw-Loop ohne V-Sync-Wartezeit).
+// Aufruf: begin() vor dem Draw-Loop, end() danach.
+// average gibt den gleitenden Durchschnitt der letzten 60 Messungen zurück.
+export class CpuTimer {
+  private t0 = 0;
+  private buf: number[] = [];
+  begin(): void { this.t0 = performance.now(); }
+  end(): void {
+    const dt = performance.now() - this.t0;
+    this.buf.push(dt);
+    if (this.buf.length > 60) this.buf.shift();
+  }
+  get average(): number {
+    if (this.buf.length === 0) return 0;
+    return this.buf.reduce((a, b) => a + b, 0) / this.buf.length;
+  }
+  reset(): void { this.buf = []; }
+}
