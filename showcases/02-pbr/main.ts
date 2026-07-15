@@ -1,3 +1,4 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3, vec4 } from "gl-matrix";
 

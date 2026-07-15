@@ -1,3 +1,4 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
 import { getWebGL2, createProgram, createBuffer, resizeCanvasToDisplaySize } from "../../../src/shared/gl";

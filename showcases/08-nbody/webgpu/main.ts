@@ -1,8 +1,14 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
 import { getWebGPU, resizeWebGPUCanvas } from "../../../src/shared/webgpu";
 import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
-import { NBODY_COMPUTE, NBODY_RENDER_VS, NBODY_RENDER_FS } from "./shaders.wgsl";
+import NBODY_COMPUTE from "../shaders/gpu/simulate.wgsl?raw";
+import NBODY_RENDER  from "../shaders/gpu/render.wgsl?raw";
+
+// Both VS and FS entry points live in the same WGSL file.
+const NBODY_RENDER_VS = NBODY_RENDER;
+const NBODY_RENDER_FS = NBODY_RENDER;
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;

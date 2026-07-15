@@ -1,7 +1,11 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { getWebGL2, createProgram } from "../../../src/shared/gl";
 import { BenchmarkRun, createStatsPanel, formatResult } from "../../../src/shared/benchmark";
-import { VS_SRC, FS_SRC } from "./shaders";
+import { splitGLSL } from "../../../src/shared/splitGLSL";
+import raytracerGlsl from "../shaders/gl/raytracer.glsl?raw";
+
+const [VS_SRC, FS_SRC] = splitGLSL(raytracerGlsl);
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;

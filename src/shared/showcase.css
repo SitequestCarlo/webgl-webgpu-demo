@@ -1,0 +1,82 @@
+/* =============================================================================
+   showcase.css – Gemeinsame Styles für alle Showcase-Seiten
+   Wird in jedem showcase/main.ts via import '/src/shared/showcase.css' eingebunden.
+   Vite injiziert das CSS beim Build automatisch.
+   ============================================================================= */
+
+:root { color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: #0f1115;
+  color: #e6e8eb;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* App-Container: füllt Viewport vollständig */
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+/* Canvas: CSS-Größe = 100%, Pixelgröße wird per JS gesetzt (DPR-korrekt) */
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Zweiter Canvas (z.B. Label-Overlay für 02-pbr) */
+#labels {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+/* Stacked-Canvas-Modus (02-pbr, 04-pathtracer): beide übereinander */
+#gl, #labels { position: absolute; }
+
+/* Benchmark-Ergebnis-Panel (oben rechts, erscheint nach Messung) */
+#results {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  min-width: 180px;
+  white-space: pre;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.78rem;
+  color: #cdd3dc;
+  background: rgba(20, 22, 26, 0.88);
+  border: 1px solid #2c313a;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  display: none;
+  z-index: 20;
+}
+
+/* lil-gui: Standard-Position oben rechts, 260px breit */
+.lil-gui.root {
+  --width: 260px;
+  --name-width: 40%;
+  position: absolute !important;
+  top: 8px;
+  right: 8px;
+}
+
+/* lil-gui: Checkboxen rechtsbündig */
+.lil-gui .controller.boolean .widget {
+  justify-content: flex-end;
+}
+
+/* lil-gui: Select-Dropdown füllt den Widget-Bereich */
+.lil-gui .controller.option select  { width: 100%; }
+.lil-gui .controller.option .display { width: 100%; }

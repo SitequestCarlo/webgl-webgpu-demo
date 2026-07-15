@@ -1,3 +1,4 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import {
@@ -6,7 +7,10 @@ import {
 } from "../../../src/shared/gl";
 import { createCube } from "../../../src/shared/geometry";
 import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
-import { BENCH_VS_GLSL, BENCH_FS_GLSL } from "../../../src/shared/benchShaders";
+import { splitGLSL } from "../../../src/shared/splitGLSL";
+import blinnPhongGlsl from "../shaders/gl/blinn-phong.glsl?raw";
+
+const [BENCH_VS_GLSL, BENCH_FS_GLSL] = splitGLSL(blinnPhongGlsl);
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;

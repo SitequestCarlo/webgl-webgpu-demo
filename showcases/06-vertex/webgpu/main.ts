@@ -1,23 +1,14 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffer, createGPUIndexBuffer, mat3ToMat4Array, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor } from "../../../src/shared/webgpu";
 import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
-import { BENCH_WGSL, DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/benchShaders";
+import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
+import BENCH_WGSL   from "../shaders/gpu/vertex-simple.wgsl?raw";
+import HEAVY_BASE   from "../shaders/gpu/vertex-heavy.wgsl?raw";
 
-// Heavy-VS-WGSL: gleiche Struktur + teure Displacement-Ops
-const HEAVY_WGSL = BENCH_WGSL.replace(
-  "o.normal   = (draw.normalMat * vec4<f32>(norm, 0.0)).xyz;",
-  `var dpos = pos;
-  for(var i = 0u; i < 8u; i++) {
-    let fi = f32(i+1u);
-    dpos += norm * (sin(pos.x*fi)*cos(pos.y*fi)*sin(pos.z*fi)) * 0.02;
-  }
-  let worldD = draw.model * vec4<f32>(dpos, 1.0);
-  o.clip = scene.proj * scene.view * worldD;
-  o.worldPos = worldD.xyz;
-  o.normal   = (draw.normalMat * vec4<f32>(norm, 0.0)).xyz;`
-);
+const HEAVY_WGSL = HEAVY_BASE;
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;

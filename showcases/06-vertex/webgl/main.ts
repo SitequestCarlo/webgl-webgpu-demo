@@ -1,9 +1,13 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import { getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
-import { BENCH_FS_GLSL } from "../../../src/shared/benchShaders";
+import { splitGLSL } from "../../../src/shared/splitGLSL";
+import vertexSimpleGlsl from "../shaders/gl/vertex-simple.glsl?raw";
+
+const BENCH_FS_GLSL = splitGLSL(vertexSimpleGlsl)[1];
 
 // Einfacher und schwerer Vertex-Shader für Vergleich
 const VS_SIMPLE = /* glsl */`#version 300 es

@@ -1,9 +1,14 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import { getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
-import { ML_VS_GLSL, buildFragShader, MAX_LIGHTS } from "../shaders";
+import { splitGLSL } from "../../../src/shared/splitGLSL";
+import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
+
+const [ML_VS_GLSL, ML_FS_GLSL] = splitGLSL(multiLightGlsl);
+const MAX_LIGHTS = 256;
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -11,7 +16,7 @@ const gl = getWebGL2(canvas);
 gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.clearColor(0.02, 0.02, 0.04, 1);
 
 // Shader: MAX_LIGHTS als Shader-Konstante → einmal compilieren
-const program = createProgram(gl, ML_VS_GLSL, buildFragShader(MAX_LIGHTS));
+const program = createProgram(gl, ML_VS_GLSL, ML_FS_GLSL);
 const U = getUniforms(gl, program, [
   "uModel","uView","uProj","uNormalMatrix","uViewPos",
   "uAmbient","uShininess","uNumLights",

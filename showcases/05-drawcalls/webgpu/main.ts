@@ -1,3 +1,4 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import {
@@ -7,7 +8,8 @@ import {
 } from "../../../src/shared/webgpu";
 import { createCube } from "../../../src/shared/geometry";
 import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
-import { BENCH_WGSL, DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/benchShaders";
+import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
+import BENCH_WGSL from "../shaders/gpu/blinn-phong.wgsl?raw";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;

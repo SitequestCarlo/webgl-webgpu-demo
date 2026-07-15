@@ -1,8 +1,18 @@
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
+import '/src/shared/showcase.css';
 import { createProgram } from "../../../src/shared/gl";
 import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
-import { SIM_VS, buildSimFS, PASS_VS, PASS_FS } from "./shaders";
+import { splitGLSL } from "../../../src/shared/splitGLSL";
+import simulateGlsl from "../shaders/gl/simulate.glsl?raw";
+import renderGlsl   from "../shaders/gl/render.glsl?raw";
+
+const [SIM_VS, _SIM_FS_BASE] = splitGLSL(simulateGlsl);
+const [PASS_VS, PASS_FS]     = splitGLSL(renderGlsl);
+// buildSimFS ersetzt #define N 256 durch den aktuellen Wert (Shader-Rebuild bei N-Wechsel)
+function buildSimFS(n: number): string {
+  return _SIM_FS_BASE.replace('#define N 256', `#define N ${n}`);
+}
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;

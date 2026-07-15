@@ -1,14 +1,20 @@
+import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { vec3 } from "gl-matrix";
 import { createProgram } from "../../../src/shared/gl";
 import { BenchmarkRun, createStatsPanel, formatResult } from "../../../src/shared/benchmark";
-import { VS_SRC, PT_FS } from "./shaders";
+import { splitGLSL } from "../../../src/shared/splitGLSL";
+import pathtracerGlsl from "../shaders/gl/pathtracer.glsl?raw";
+
+// Zeilenenden normalisieren: \r\n → \n (wichtig für ANGLE/D3D11 HLSL-Compiler)
+const [VS_SRC, PT_FS] = splitGLSL(pathtracerGlsl.replace(/\r\n/g, '\n'));
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
 
 // preserveDrawingBuffer: Canvas-Inhalt bleibt zwischen Frames erhalten.
-// Alpha-Blending akkumuliert Samples: blend(src_alpha, 1-src_alpha)
+// Alpha-Blending akkumuliert Samples intern: blend(src_alpha, 1-src_alpha).
+// alpha: false verhindert Browser-Compositing mit Alpha-Kanal (bleibt opak).
 const gl = canvas.getContext("webgl2", {
   antialias: false,
   powerPreference: "high-performance",

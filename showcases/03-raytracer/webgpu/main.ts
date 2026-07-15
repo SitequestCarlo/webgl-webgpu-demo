@@ -1,8 +1,14 @@
 import { GUI } from "lil-gui";
+import '/src/shared/showcase.css';
 import { vec3 } from "gl-matrix";
 import { getWebGPU, resizeWebGPUCanvas } from "../../../src/shared/webgpu";
 import { BenchmarkRun, createStatsPanel, formatResult } from "../../../src/shared/benchmark";
-import { COMPUTE_SRC, BLIT_VS, BLIT_FS } from "./shaders.wgsl";
+import COMPUTE_SRC from "../shaders/gpu/compute.wgsl?raw";
+import BLIT_SRC from "../shaders/gpu/blit.wgsl?raw";
+
+// Both vertex and fragment entry points live in the same WGSL file.
+const BLIT_VS = BLIT_SRC;
+const BLIT_FS = BLIT_SRC;
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
