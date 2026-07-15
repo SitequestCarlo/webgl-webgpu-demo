@@ -42,12 +42,3 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 ```
 
 **Limit:** N = 4096+ interaktiv möglich.
-
-## Performance-Vergleich
-
-| N | WebGL2 | WebGPU |
-|---|---|---|
-| 256 | ~60 FPS | ~120 FPS |
-| 512 | ~15 FPS | ~120 FPS |
-| 1024 | Nicht flüssig | ~60 FPS |
-| 4096 | — | ~15 FPS |
