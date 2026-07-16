@@ -151,11 +151,71 @@ const codeBlock   = document.getElementById('code-block') as HTMLElement;
 const fileListEl  = document.getElementById('file-list')!;
 const btnWebGL    = document.getElementById('btn-webgl')  as HTMLButtonElement;
 const btnWebGPU   = document.getElementById('btn-webgpu') as HTMLButtonElement;
+const btnPopup    = document.getElementById('btn-popup')  as HTMLButtonElement;
 const emptyState  = document.getElementById('empty-state')!;
 const headerArea  = document.getElementById('showcase-header')!;
 const apiWarning  = document.getElementById('api-warning')!;
 const infoPanel   = document.getElementById('info-panel')!;
 const codeView    = document.getElementById('code-view')!;
+const hSplitter   = document.getElementById('h-splitter')!;
+
+// ---------------------------------------------------------------------------
+// Popup-Button
+// ---------------------------------------------------------------------------
+
+btnPopup.addEventListener('click', () => {
+  const url = frame.src;
+  if (!url || url === 'about:blank') return;
+  const w = Math.min(1200, screen.availWidth  - 40);
+  const h = Math.min( 800, screen.availHeight - 60);
+  const l = Math.round((screen.availWidth  - w) / 2);
+  const t = Math.round((screen.availHeight - h) / 2);
+  window.open(url, '_blank',
+    `popup,width=${w},height=${h},left=${l},top=${t},resizable=yes,scrollbars=no`);
+});
+
+// ---------------------------------------------------------------------------
+// Draggable Splitter (Canvas ↕ Info-Panel)
+// ---------------------------------------------------------------------------
+
+(function initSplitter(): void {
+  const contentArea = document.getElementById('content-area')!;
+
+  // Transparentes Overlay blockiert den iframe waehrend des Drags
+  // (iframes "schlucken" sonst MouseMove-Events)
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0;z-index:9999;display:none;cursor:row-resize;';
+  document.body.appendChild(overlay);
+
+  let dragging = false;
+  let startY = 0;
+  let startFrameH = 0;
+
+  hSplitter.addEventListener('mousedown', (e) => {
+    dragging    = true;
+    startY      = e.clientY;
+    startFrameH = frame.getBoundingClientRect().height;
+    hSplitter.classList.add('dragging');
+    overlay.style.display = 'block';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const totalH   = contentArea.getBoundingClientRect().height;
+    const delta    = e.clientY - startY;
+    const newFrameH = Math.min(Math.max(startFrameH + delta, 80), totalH - 80 - 5);
+    frame.style.flex     = `0 0 ${newFrameH}px`;
+    infoPanel.style.flex = '1';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    hSplitter.classList.remove('dragging');
+    overlay.style.display = 'none';
+  });
+})();
 
 // ---------------------------------------------------------------------------
 // Sidebar aufbauen
@@ -227,8 +287,10 @@ function navigate(id: string): void {
 
   // iframe: nur anzeigen wenn ein Showcase-URL existiert
   const hasFrame = !!(entry.webgl || entry.webgpu);
-  frame.style.display    = hasFrame ? 'block' : 'none';
-  infoPanel.style.flex   = hasFrame ? '' : '1';  // bei reiner README voll expandieren
+  frame.style.display      = hasFrame ? 'block' : 'none';
+  hSplitter.style.display  = hasFrame ? 'block' : 'none';
+  btnPopup.style.display   = hasFrame ? 'flex'  : 'none';
+  infoPanel.style.flex     = hasFrame ? '' : '1';  // bei reiner README voll expandieren
   (document.getElementById('code-split') as HTMLElement).style.height = hasFrame ? '' : '100%';
 
   // Auto-Switch zu WebGPU falls Showcase kein WebGL hat

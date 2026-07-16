@@ -195,6 +195,26 @@ html, body {
   border: 1px solid var(--border);
 }
 
+/* Popup-Button im Header */
+#btn-popup {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+#btn-popup:hover { color: var(--text); border-color: #404050; }
+/* Wenn api-warning sichtbar ist, soll margin-left: auto am warning bleiben */
+#api-warning[style*="block"] ~ #btn-popup { margin-left: 0; }
+
 /* Leerzustand */
 #empty-state {
   flex: 1;
@@ -209,6 +229,24 @@ html, body {
 #empty-state svg { opacity: 0.3; }
 #empty-state p { font-size: 0.88rem; }
 
+/* Draggable Splitter zwischen Canvas und Info-Panel */
+#h-splitter {
+  flex-shrink: 0;
+  height: 5px;
+  background: var(--border);
+  cursor: row-resize;
+  position: relative;
+  transition: background 0.1s;
+}
+#h-splitter:hover,
+#h-splitter.dragging { background: #38383f; }
+#h-splitter::after {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+  /* Vergrößerter Klickbereich */
+}
+
 /* Canvas + Info-Panel */
 #content-area {
   flex: 1;
@@ -221,8 +259,8 @@ html, body {
   display: none;
   width: 100%;
   border: none;
-  flex: 0 0 60%;
-  border-bottom: 1px solid var(--border);
+  flex: 0 0 58%;
+  min-height: 80px;
   background: #0c0c0e;
 }
 
@@ -230,7 +268,8 @@ html, body {
 #info-panel {
   display: none;
   flex-direction: column;
-  flex: 0 0 40%;
+  flex: 1;
+  min-height: 80px;
   overflow: hidden;
   background: var(--sidebar-bg);
 }
@@ -328,14 +367,15 @@ html, body {
   font-size: 0.82rem;
 }
 
-/* Highlight.js – gedaempfte Farben fuer neutrales Theme */
-.hljs { background: transparent; color: #c8c8d0; }
-.hljs-keyword, .hljs-built_in { color: #b0b0be; }
-.hljs-string, .hljs-meta { color: #c8c8d0; }
-.hljs-number { color: #a0a0b0; }
-.hljs-comment { color: #585868; font-style: italic; }
-.hljs-function, .hljs-title { color: #d0d0dc; }
-.hljs-params { color: #c0c0cc; }
-.hljs-type, .hljs-class { color: #b8b8c8; }
-.hljs-variable { color: #a8a8bc; }
-.hljs-operator { color: #909098; }
+/* Highlight.js – VS Code Dark+ Farbschema */
+.hljs                        { background: transparent; color: #d4d4d4; }
+.hljs-keyword                { color: #c586c0; }           /* fn, let, var, if, return … */
+.hljs-built_in               { color: #dcdcaa; }           /* normalize, dot, mix … */
+.hljs-string, .hljs-meta     { color: #ce9178; }           /* Strings, Annotationen (@group …) */
+.hljs-number                 { color: #b5cea8; }           /* Zahlenliterale */
+.hljs-comment                { color: #6a9955; font-style: italic; }
+.hljs-function, .hljs-title  { color: #dcdcaa; }           /* Funktionsnamen */
+.hljs-params                 { color: #d4d4d4; }
+.hljs-type, .hljs-class      { color: #4ec9b0; }           /* vec3, f32, mat4 … */
+.hljs-variable               { color: #9cdcfe; }
+.hljs-operator               { color: #d4d4d4; }
