@@ -88,6 +88,7 @@ const benchmark = new BenchmarkRun(30, 200);
 const gpuTimer  = new CpuTimer();
 
 const gui = new GUI({ title: "Vertex Throughput (WebGL)" });
+let pendingCapture = false;
 const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
 const msCtrl  = gui.add({ ms: "– ms" }, "ms").name("GPU-Zeit (finish)").disable();
 gui.add(params, "segments", 10, 2000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
@@ -103,6 +104,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] ${(currentTriCount/1000).toFixed(0)}k Dreiecke${params.heavyVS ? " (Heavy VS)" : ""}\n${formatResult(r)}\nGPU avg: ${gpuTimer.average.toFixed(2)} ms`;
 } }, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
   (triCtrl as {setValue:(v:string)=>void}).setValue(`${(currentTriCount/1000).toFixed(0)}k`);
   (msCtrl  as {setValue:(v:string)=>void}).setValue(`${gpuTimer.average.toFixed(2)} ms`);
@@ -138,8 +140,10 @@ function render(now: number): void {
   gl.finish(); // GPU-Sync für Timing
   gpuTimer.end();
   gl.bindVertexArray(null);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'vertex-webgl.png'; a.click(); }, 'image/png'); }
   stats.update();
   benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

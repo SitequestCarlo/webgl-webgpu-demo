@@ -76,6 +76,7 @@ const benchmark = new BenchmarkRun(30, 200);
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Vertex Throughput (WebGPU)" });
+let pendingCapture = false;
 const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
 const msCtrl  = gui.add({ ms: supportsTs ? "– ms (GPU)" : "– ms" }, "ms").name("GPU-Zeit").disable();
 gui.add(params, "segments", 10, 2000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
@@ -88,6 +89,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] ${(triCount/1000).toFixed(0)}k Dreiecke${params.heavyVS?" (Heavy VS)":""}\n${formatResult(r)}\nGPU: ${gpuMsLast.toFixed(supportsTs?3:2)} ms`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
   (triCtrl as {setValue:(v:string)=>void}).setValue(`${(triCount/1000).toFixed(0)}k`);
   if (gpuMsLast > 0) (msCtrl as {setValue:(v:string)=>void}).setValue(`${gpuMsLast.toFixed(supportsTs?3:2)} ms${supportsTs?" (GPU)":""}`);
@@ -142,7 +144,9 @@ function render(now: number): void {
   } else if (!supportsTs) {
     gpuMsLast = performance.now() - t0;
   }
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'vertex-webgpu.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

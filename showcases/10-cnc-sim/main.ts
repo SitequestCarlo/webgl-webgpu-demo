@@ -336,6 +336,8 @@ const progressCtrl = gui.add(params, "progress", 0, toolpath.length, 1).name("Fo
 gui.add(params, "resolution", RESOLUTIONS).name("Auflösung").onChange((v: number) => rebuildForResolution(v));
 gui.add(params, "showTool").name("Werkzeug zeigen");
 gui.add(params, "reset").name("Zurücksetzen");
+let pendingCapture = false;
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 // Kamera-Update
 function updateCamera(): void {
@@ -410,6 +412,7 @@ function frame(): void {
   }
   rpass.end();
   device.queue.submit([encoder.finish()]);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'cnc-webgpu.png'; a.click(); }, 'image/png'); }
   scheduleNextFrame();
 }
 

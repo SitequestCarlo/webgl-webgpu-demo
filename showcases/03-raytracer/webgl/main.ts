@@ -176,12 +176,11 @@ function captureWebp(): void {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `raytracer-webgl-${new Date().toISOString().replace(/[:.]/g, "-")}.webp`;
+      a.download = `raytracer-webgl.png`;
       a.click();
       URL.revokeObjectURL(url);
     },
-    "image/webp",
-    0.92,
+    "image/png",
   );
 }
 
@@ -195,7 +194,7 @@ async function runBenchmark(): Promise<void> {
 const gui = new GUI({ title: "Raytracer (WebGL)" });
 const params = { raytracing: true };
 gui.add(params, "raytracing").name("Raytracing An/Aus");
-gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (webp)");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 gui.add({ run: () => void runBenchmark() }, "run").name("Benchmark starten");
 
 // --- Render-Loop ---------------------------------------------------------

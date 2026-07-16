@@ -149,14 +149,12 @@ function captureWebp(): void {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const ts = new Date().toISOString().replace(/[:.]/g, "-");
       a.href = url;
-      a.download = `shading-${params.shading}-${ts}.webp`;
+      a.download = `shading-webgl-${params.shading}.png`;
       a.click();
       URL.revokeObjectURL(url);
     },
-    "image/webp",
-    0.92,
+    "image/png",
   );
 }
 
@@ -183,7 +181,7 @@ pbrFolder.add(params, "roughness", 0.05, 1.0, 0.01).name("Roughness");
 pbrFolder.add(params, "metallic", 0.0, 1.0, 0.01).name("Metallic");
 gui.add(params, "wireframe").name("Wireframe");
 gui.add(params, "autoRotate").name("Auto-Rotieren");
-gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (webp)");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 gui.add({ run: () => void runBenchmark() }, "run").name("Benchmark starten");
 
 // --- Render-Loop ---------------------------------------------------------

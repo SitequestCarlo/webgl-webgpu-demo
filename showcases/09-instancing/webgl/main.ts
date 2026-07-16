@@ -82,12 +82,14 @@ const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel
 const benchmark = new BenchmarkRun(30, 200);
 
 const gui = new GUI({ title: "Instancing (WebGL)" });
+let pendingCapture = false;
 gui.add(params, "n", 1000, MAX_N, 1000).name("N Instanzen").onFinishChange((v: number) => buildInstances(Math.round(v)));
 gui.add({ run: async () => {
   resultsEl.style.display = "block"; resultsEl.textContent = `Messe N=${params.n} Instanzen ...`;
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] ${params.n} Instanzen\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 function render(now: number): void {
   if (resizeCanvasToDisplaySize(canvas)) {
@@ -103,7 +105,9 @@ function render(now: number): void {
   gl.bindVertexArray(vao);
   gl.drawElementsInstanced(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_INT, 0, Math.round(params.n));
   gl.bindVertexArray(null);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'instancing-webgl.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

@@ -154,12 +154,11 @@ function captureWebp(): void {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `shading-webgpu-${params.shading}-${new Date().toISOString().replace(/[:.]/g, "-")}.webp`;
+      a.download = `shading-webgpu-${params.shading}.png`;
       a.click();
       URL.revokeObjectURL(url);
     },
-    "image/webp",
-    0.92,
+    "image/png",
   );
 }
 
@@ -189,7 +188,7 @@ pbrFolder.close();
 pbrFolder.add(params, "roughness", 0.05, 1.0, 0.01).name("Roughness");
 pbrFolder.add(params, "metallic", 0.0, 1.0, 0.01).name("Metallic");
 gui.add(params, "autoRotate").name("Auto-Rotieren");
-gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (webp)");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 gui.add({ run: () => void runBenchmark() }, "run").name("Benchmark starten");
 
 // --- Helpers: Uniform-Buffer befüllen ------------------------------------

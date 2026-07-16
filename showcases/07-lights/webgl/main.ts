@@ -67,6 +67,7 @@ const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel
 const benchmark = new BenchmarkRun(30, 200);
 
 const gui = new GUI({ title: "Multi-Light (WebGL)" });
+let pendingCapture = false;
 gui.add(params, "numLights", 1, MAX_LIGHTS, 1).name("Lichtquellen").onChange((v:number) => { lights = buildLights(Math.round(v)); });
 gui.add(params, "autoRotate").name("Rotation");
 gui.add({ run: async () => {
@@ -74,6 +75,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] ${params.numLights} Lichter\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 let angle = 0, lastT = performance.now();
 function render(now: number): void {
@@ -106,7 +108,9 @@ function render(now: number): void {
   gl.bindVertexArray(vao);
   gl.drawElements(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_INT, 0);
   gl.bindVertexArray(null);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'lights-webgl.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

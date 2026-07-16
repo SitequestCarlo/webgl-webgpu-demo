@@ -95,12 +95,14 @@ const benchmark = new BenchmarkRun(30, 200);
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Instancing (WebGPU)" });
+let pendingCapture = false;
 gui.add(params, "n", 1000, MAX_N, 1000).name("N Instanzen").onFinishChange((v: number) => buildInstances(Math.round(v)));
 gui.add({ run: async () => {
   resultsEl.style.display = "block"; resultsEl.textContent = `Messe N=${params.n} ...`;
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] ${params.n} Instanzen\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 function render(now: number): void {
   if (resizeWebGPUCanvas(canvas)) {
@@ -119,7 +121,9 @@ function render(now: number): void {
   pass.drawIndexed(geo.indexCount, Math.round(params.n));
   pass.end();
   device.queue.submit([cmd.finish()]);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'instancing-webgpu.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

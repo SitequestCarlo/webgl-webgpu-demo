@@ -102,6 +102,7 @@ const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel
 const benchmark = new BenchmarkRun(10, 100);
 
 const gui = new GUI({ title: "N-Body (WebGPU)" });
+let pendingCapture = false;
 gui.add(params, "N", [64, 128, 256, 512, 1024, 2048, 4096]).name("N Partikel").onChange((v: number) => rebuild(v));
 gui.add(params, "dt", 0.0005, 0.01, 0.0001).name("Zeitschritt");
 gui.add(params, "softening", 0.01, 1.0, 0.01).name("Softening");
@@ -110,6 +111,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] N-Body N=${currentN}\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 // --- Render Loop -------------------------------------------------------------
 
@@ -145,7 +147,9 @@ function render(now: number): void {
   rp.end();
   device.queue.submit([cmd.finish()]);
   flip = 1 - flip;
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'nbody-webgpu.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

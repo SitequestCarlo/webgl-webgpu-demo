@@ -180,12 +180,11 @@ function captureWebp(): void {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `pbr-grid-webgpu-${new Date().toISOString().replace(/[:.]/g, "-")}.webp`;
+      a.download = `pbr-grid-webgpu.png`;
       a.click();
       URL.revokeObjectURL(url);
     },
-    "image/webp",
-    0.92,
+    "image/png",
   );
 }
 
@@ -205,7 +204,7 @@ lightFolder.add(params, "lightX", -12, 12, 0.1).name("X").onChange(updateLight);
 lightFolder.add(params, "lightY", -12, 12, 0.1).name("Y").onChange(updateLight);
 lightFolder.add(params, "lightZ",   0, 16, 0.1).name("Z").onChange(updateLight);
 lightFolder.add(params, "lightIntensity", 0.5, 10, 0.1).name("Intensität").onChange(updateLight);
-gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (webp)");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 gui.add({ run: () => void runBenchmark() }, "run").name("Benchmark starten");
 
 // --- Achsenbeschriftung (2D-Canvas-Overlay) ------------------------------

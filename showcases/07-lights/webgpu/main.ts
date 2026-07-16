@@ -64,6 +64,7 @@ const benchmark = new BenchmarkRun(30, 200);
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Multi-Light (WebGPU)" });
+let pendingCapture = false;
 gui.add(params, "numLights", 1, MAX_LIGHTS, 1).name("Lichtquellen");
 gui.add(params, "autoRotate").name("Rotation");
 gui.add({ run: async () => {
@@ -71,6 +72,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] ${params.numLights} Lichter\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 let angle = 0, lastT = performance.now();
 function render(now: number): void {
@@ -108,7 +110,9 @@ function render(now: number): void {
   pass.setVertexBuffer(0, vb); pass.setIndexBuffer(ib, "uint32");
   pass.drawIndexed(geo.indexCount); pass.end();
   device.queue.submit([cmd.finish()]);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'lights-webgpu.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

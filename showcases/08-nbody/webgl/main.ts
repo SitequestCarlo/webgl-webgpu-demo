@@ -121,6 +121,7 @@ const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel
 const benchmark = new BenchmarkRun(10, 100);
 
 const gui = new GUI({ title: "N-Body (WebGL)" });
+let pendingCapture = false;
 gui.add(params, "N", [64, 128, 256, 512]).name("N Partikel").onChange((v: number) => { N = v; rebuild(); });
 gui.add(params, "dt", 0.0005, 0.01, 0.0001).name("Zeitschritt");
 gui.add(params, "softening", 0.01, 1.0, 0.01).name("Softening");
@@ -129,6 +130,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] N-Body N=${N}\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 // --- Render Loop ------------------------------------------------------------
 
@@ -174,7 +176,9 @@ function render(now: number): void {
   gl.disable(gl.BLEND);
 
   [readFBO, writeFBO] = [writeFBO, readFBO];
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'nbody-webgl.png'; a.click(); }, 'image/png'); }
   stats.update(); benchmark.sample(now);
   requestAnimationFrame(render);
 }
+
 requestAnimationFrame(render);

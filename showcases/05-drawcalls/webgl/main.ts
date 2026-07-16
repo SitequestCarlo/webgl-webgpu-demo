@@ -93,6 +93,7 @@ stats.showPanel(1);
 const benchmark = new BenchmarkRun(30, 200);
 
 const gui = new GUI({ title: "Draw-Calls (WebGL)" });
+let pendingCapture = false;
 gui.add(params, "n", 100, MAX_N, 100).name("N Objekte").onChange((v: number) => rebuildObjects(Math.round(v)));
 const cpuCtrl = gui.add({ cpu: "– ms" }, "cpu").name("CPU Draw-Zeit").disable();
 gui.add(params, "autoRotate").name("Rotation");
@@ -102,6 +103,7 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] N=${params.n} Draw-Calls\n${formatResult(r)}\nCPU avg: ${cpuTimer.average.toFixed(2)} ms`;
 } }, "run").name("Benchmark starten");
+gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 setInterval(() => {
   (cpuCtrl as { setValue:(v:string)=>void }).setValue(`${cpuTimer.average.toFixed(2)} ms`);
@@ -144,6 +146,7 @@ function render(now: number): void {
   cpuTimer.end();
 
   gl.bindVertexArray(null);
+  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'drawcalls-webgl.png'; a.click(); }, 'image/png'); }
   stats.update();
   benchmark.sample(now);
   requestAnimationFrame(render);

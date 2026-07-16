@@ -57,15 +57,13 @@ export function createControls(
       blob => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
-        const ts  = new Date().toISOString().replace(/[:.]/g, '-');
         const a   = document.createElement('a');
         a.href     = url;
-        a.download = `${label.replace(/[^a-zA-Z0-9-]/g, '-')}-${ts}.webp`;
+        a.download = `${label.replace(/[^a-zA-Z0-9-]/g, '-')}.png`;
         a.click();
         URL.revokeObjectURL(url);
       },
-      'image/webp',
-      0.92,
+      'image/png',
     );
   }
 
@@ -81,7 +79,7 @@ export function createControls(
     ].join('\n');
   }
 
-  gui.add({ shot: () => { pendingCapture = true; } }, 'shot').name('Screenshot (webp)');
+  gui.add({ shot: () => { pendingCapture = true; } }, 'shot').name('Screenshot (PNG)');
   gui.add({ run:  () => void runBenchmark() },         'run').name('Benchmark starten');
 
   return {
