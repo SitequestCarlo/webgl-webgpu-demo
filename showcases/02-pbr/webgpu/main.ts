@@ -136,7 +136,7 @@ const cameraPos = vec3.fromValues(0, 0, 9.0);
 const projView  = mat4.create();
 const FOV_DEG   = 52;
 
-mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
+mat4.lookAt(view, cameraPos, [0, -0.15, 0], [0, 1, 0]);
 
 function updateProjection(): void {
   const aspect = canvas.width / Math.max(1, canvas.height);
@@ -239,9 +239,10 @@ function drawLabels(): void {
     labelsCtx.fillText(String(ROUGHNESS[col]), sx, sy);
   }
   labelsCtx.font = `bold ${fs}px system-ui, sans-serif`;
-  labelsCtx.fillStyle = "#374151";
+  labelsCtx.fillStyle = "#6b7280";
+  labelsCtx.textBaseline = "bottom";
   const [, ty] = worldToScreen(0, botY - SPACING * 1.1, 0, w, h);
-  labelsCtx.fillText("Roughness →", w * 0.5, ty);
+  labelsCtx.fillText("Roughness →", w * 0.5, Math.min(ty + fs, h - 2));
 
   labelsCtx.font = `${fsS}px system-ui, sans-serif`;
   labelsCtx.fillStyle = "#6b7280";
@@ -258,7 +259,7 @@ function drawLabels(): void {
   labelsCtx.rotate(-Math.PI / 2);
   labelsCtx.textAlign = "center"; labelsCtx.textBaseline = "middle";
   labelsCtx.font = `bold ${fs}px system-ui, sans-serif`;
-  labelsCtx.fillStyle = "#374151";
+  labelsCtx.fillStyle = "#6b7280";
   labelsCtx.fillText("↑ Metallic", 0, 0);
   labelsCtx.restore();
 }

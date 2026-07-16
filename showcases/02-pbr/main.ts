@@ -74,7 +74,7 @@ const normalMat  = mat3.create();
 const projView   = mat4.create();
 
 const cameraPos = vec3.fromValues(0, 0, 9.0);
-mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
+mat4.lookAt(view, cameraPos, [0, -0.15, 0], [0, 1, 0]);
 
 const FOV_DEG = 52;
 
@@ -183,11 +183,12 @@ function drawLabels(): void {
     labelsCtx.fillText(ROUGHNESS[col].toFixed(2).replace(/\.?0+$/, "") || "0", sx, sy);
   }
 
-  // Roughness-Titel
+  // Roughness-Titel per worldToScreen (Viewport passt jetzt)
   labelsCtx.font = `bold ${fs}px system-ui, sans-serif`;
-  labelsCtx.fillStyle = "#374151";
+  labelsCtx.fillStyle = "#6b7280";
+  labelsCtx.textBaseline = "bottom";
   const [, titleY] = worldToScreen(0, bottomRowY - SPACING * 1.1, 0, w, h);
-  labelsCtx.fillText("Roughness →", w * 0.5, titleY);
+  labelsCtx.fillText("Roughness →", w * 0.5, Math.min(titleY + fs, h - 2));
 
   // --- Metallic-Werte (links der linken Spalte) ---
   labelsCtx.font = `${fsSmall}px system-ui, sans-serif`;
@@ -209,7 +210,7 @@ function drawLabels(): void {
   labelsCtx.textAlign = "center";
   labelsCtx.textBaseline = "middle";
   labelsCtx.font = `bold ${fs}px system-ui, sans-serif`;
-  labelsCtx.fillStyle = "#374151";
+  labelsCtx.fillStyle = "#6b7280";
   labelsCtx.fillText("↑ Metallic", 0, 0);
   labelsCtx.restore();
 }

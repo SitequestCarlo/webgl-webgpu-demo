@@ -23,7 +23,7 @@ fn hitSphere(ro: vec3<f32>, rd: vec3<f32>, c: vec3<f32>, r: f32, tmax: f32) -> f
 
 fn sceneHit(ro: vec3<f32>, rd: vec3<f32>) -> Hit {
     var h: Hit; h.t=1e20; h.mat=0u;
-    if(abs(rd.y)>1e-4){let tb=(-1.0-ro.y)/rd.y; if(tb>0.001&&tb<h.t){h.t=tb;h.n=vec3<f32>(0,1,0);h.mat=4u;let p=ro+tb*rd;let cb=(floor(p.x)+floor(p.z))%2.0<1.0;h.albedo=select(vec3<f32>(0.3),vec3<f32>(0.9),cb);}}
+    if(abs(rd.y)>1e-4){let tb=(-1.0-ro.y)/rd.y; if(tb>0.001&&tb<h.t){h.t=tb;h.n=vec3<f32>(0,1,0);h.mat=4u;let p=ro+tb*rd;let cb=((i32(floor(p.x))^i32(floor(p.z)))&1)==0;h.albedo=select(vec3<f32>(0.3),vec3<f32>(0.9),cb);}}
     let t1=hitSphere(ro,rd,vec3<f32>(-1.1,-0.5,-0.5),0.5,h.t); if(t1>0.0){h.t=t1;h.n=normalize(ro+t1*rd-vec3<f32>(-1.1,-0.5,-0.5));h.mat=2u;h.albedo=vec3<f32>(0.9,0.9,0.85);}
     let t2=hitSphere(ro,rd,vec3<f32>(0.0,-0.5,0.0),0.5,h.t);  if(t2>0.0){h.t=t2;h.n=normalize(ro+t2*rd-vec3<f32>(0.0,-0.5,0.0));h.mat=3u;h.albedo=vec3<f32>(0.95,0.95,1.0);}
     let t3=hitSphere(ro,rd,vec3<f32>(1.1,-0.5,-0.5),0.5,h.t);  if(t3>0.0){h.t=t3;h.n=normalize(ro+t3*rd-vec3<f32>(1.1,-0.5,-0.5));h.mat=1u;h.albedo=vec3<f32>(0.85,0.2,0.15);}
@@ -47,7 +47,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
         if(h.mat==1u||h.mat==4u){color+=throughput*directLight(pos,N,h.albedo);break;}
         else if(h.mat==2u){color+=throughput*directLight(pos,N,h.albedo)*0.04;throughput*=h.albedo;rd=reflect(rd,N);ro=pos+N*0.002;}
         else {
-            let ior=select(1.5,1.0/1.5,inside); let cosI=abs(dot(N,-rd)); let fr=schlick(cosI,ior);
+            let ior=select(1.0/1.5,1.5,inside); let cosI=abs(dot(N,-rd)); let fr=schlick(cosI,ior);
             let refr=refract(rd,N,ior);
             if(length(refr)<0.001||fr>0.95){rd=reflect(rd,N);ro=pos+N*0.002;}
             else{throughput*=h.albedo;rd=normalize(refr);ro=pos-N*0.002;}
@@ -65,6 +65,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Jitter für Anti-Aliasing (progressive Akkumulation)
     let jx=hash(seed)-0.5; let jy=hash(seed+1u)-0.5;
     let uv=vec2<f32>((f32(gid.x)+jx-0.5*f32(W))/f32(H),(0.5*f32(H)-f32(gid.y)-jy)/f32(H));
-    let rd=normalize(params.camFwd.xyz*1.5+uv.x*params.camRight.xyz+uv.y*params.camUp.xyz);
+    let rd=normalize(params.camFwd.xyz*1.0+uv.x*params.camRight.xyz+uv.y*params.camUp.xyz);
     accum[idx]+=vec4<f32>(trace(params.camPos.xyz,rd),1.0);  // HDR-Akkumulation
 }
