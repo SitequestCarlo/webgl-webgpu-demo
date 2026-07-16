@@ -241,7 +241,7 @@ function drawLabels(): void {
   labelsCtx.fillStyle = "#6b7280";
   labelsCtx.textBaseline = "bottom";
   const [, ty] = worldToScreen(0, botY - SPACING * 1.1, 0, w, h);
-  labelsCtx.fillText("Roughness →", w * 0.5, Math.min(ty + fs, h - 2));
+  labelsCtx.fillText("Roughness", w * 0.5, Math.min(ty + fs, h - 2));
 
   labelsCtx.font = `${fsS}px system-ui, sans-serif`;
   labelsCtx.fillStyle = "#6b7280";
@@ -259,7 +259,7 @@ function drawLabels(): void {
   labelsCtx.textAlign = "center"; labelsCtx.textBaseline = "middle";
   labelsCtx.font = `bold ${fs}px system-ui, sans-serif`;
   labelsCtx.fillStyle = "#6b7280";
-  labelsCtx.fillText("↑ Metallic", 0, 0);
+  labelsCtx.fillText("Metallic", 0, 0);
   labelsCtx.restore();
 }
 
