@@ -1,0 +1,73 @@
+# =============================================================================
+# GitHub Actions – Build & Deploy zu GitHub Pages
+#
+# Trigger: jeder Push auf `main` + manuell über Actions-Tab (workflow_dispatch).
+#
+# Ablauf:
+#   1. build-Job:   npm ci → tsc --noEmit → vite build → Artefakt hochladen
+#   2. deploy-Job:  Artefakt auf GitHub Pages veröffentlichen
+#
+# Voraussetzung im Repository:
+#   Settings → Pages → Source: "GitHub Actions"
+# =============================================================================
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # Manuell über den Actions-Tab auslösbar
+
+# Berechtigungen für den Pages-Deploy
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Verhindert parallele Deployments, läuft laufende Deployments aber durch
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: TypeScript-Check + Vite-Build
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 20 einrichten (mit npm-Cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: TypeScript prüfen + Build
+        run: npm run build
+        # npm run build = "tsc --noEmit && vite build"
+        # Ausgabe: dist/  (statische Multi-Page-App)
+
+      - name: Build-Artefakt für Pages hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # ---------------------------------------------------------------------------
+  # Job 2: GitHub Pages Deploy
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages deployen
+        id: deployment
+        uses: actions/deploy-pages@v4
