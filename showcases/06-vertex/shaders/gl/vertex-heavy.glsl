@@ -21,7 +21,27 @@ void main(){
 // ============================================================
 #version 300 es
 precision highp float;
-in vec3 vWorldPos,vNormal;
-uniform vec3 uColor,uLightPos,uViewPos,uLightColor; uniform float uAmbient,uShininess;
+
+in vec3 vWorldPos;
+in vec3 vNormal;
+
+uniform vec3  uColor, uLightPos, uViewPos, uLightColor;
+uniform float uAmbient, uShininess;
+
 out vec4 fragColor;
-void main(){vec3 N=normalize(vNormal),L=normalize(uLightPos-vWorldPos),V=normalize(uViewPos-vWorldPos),H=normalize(L+V);float diff=max(dot(N,L),0.0),spec=pow(max(dot(N,H),0.0),uShininess);fragColor=vec4(uAmbient*uColor+diff*uColor*uLightColor+spec*uLightColor,1.0);}
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 L = normalize(uLightPos - vWorldPos);
+  vec3 V = normalize(uViewPos  - vWorldPos);
+  vec3 H = normalize(L + V);
+
+  float diff = max(dot(N, L), 0.0);
+  float spec = pow(max(dot(N, H), 0.0), uShininess);
+
+  fragColor = vec4(
+    uAmbient * uColor
+    + diff * uColor * uLightColor
+    + spec * uLightColor, 1.0);
+}
+
