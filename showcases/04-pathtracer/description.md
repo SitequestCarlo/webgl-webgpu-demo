@@ -1,45 +1,56 @@
-# Monte-Carlo Path Tracer
+# Rendering-Vergleich: Raytracing vs. Path Tracing
 
-Offene Szene mit Himmels-Umgebungslicht. Zeigt **indirekte Beleuchtung** und **Farbbluten** —
-Effekte die mit klassischem Raytracing oder Rasterization nicht direkt möglich sind.
+Eine **gemeinsame Cornell-Box** wird mit drei umschaltbaren Verfahren gerendert. Weil Szene,
+Kamera und Materialien identisch bleiben, wird der Unterschied allein durch das
+Beleuchtungsmodell sichtbar.
 
-## Was ist Path Tracing?
+## Die drei Modi
 
-Path Tracing löst die Rendering-Gleichung über **Monte-Carlo-Integration**:
-Statt einem deterministischen Strahl werden zufällige Strahlen in der Halbkugel
-über der Oberfläche verfolgt.
+| Modus | Direktes Licht | Indirektes Licht (GI) | Rauschen |
+|---|---|---|---|
+| **Whitted-Raytracing** | harte Schatten (1 Schattenstrahl) | keines | keines |
+| **Path Tracing (naiv)** | zufällig getroffen | vollständig | stark |
+| **Path Tracing (NEE)** | direkte Lichtstichprobe | vollständig | gering |
 
-### Kosinus-gewichtete Halbkugel-Stichprobe
+- **Whitted:** Diffuse Flächen erhalten nur direktes Licht; Ecken, Decke und Unterseiten
+  bleiben **schwarz**, weil kein indirektes Licht existiert. Spiegel und Glas werden rekursiv
+  weiterverfolgt.
+- **Path Tracing (naiv):** Volle globale Beleuchtung, aber die Lampe wird nur zufällig von
+  Bounce-Strahlen getroffen. Das konvergiert korrekt, jedoch **langsam** (viel Rauschen).
+- **Path Tracing (NEE):** Zusätzlich zur zufälligen Streuung wird an jedem diffusen Treffer
+  **gezielt die Lichtquelle abgetastet** (Next Event Estimation). Das liefert dasselbe Bild
+  wie der naive Pfad, nur mit **deutlich weniger Rauschen**.
 
-$$\text{PDF} = \frac{\cos\theta}{\pi} \qquad \text{Lambert-BRDF} = \frac{\text{Albedo}}{\pi}$$
+## Next Event Estimation
 
-Das Gewicht des Samples ist immer `Albedo` (die π-Terme kürzen sich heraus):
+An jedem diffusen Treffer wird ein Punkt auf der Halbkugel-Lampe gesampelt und ein
+Schattenstrahl dorthin geschickt. Der direkte Beitrag ist:
 
-```glsl
-vec3 cosineSample(vec3 N) {
-    float phi = 6.28318 * rand();
-    float sq  = sqrt(rand());
-    // Tangenten-Rahmen aufbauen und Richtung konstruieren
-    return sq * (cos(phi)*T + sin(phi)*B) + sqrt(1.0 - sq*sq) * N;
-}
-```
+$$L_\text{direkt} = \frac{\text{Albedo}}{\pi}\; L_e\; \frac{\cos\theta_\text{Fläche}\,\cos\theta_\text{Licht}}{d^2}\; A$$
+
+mit Lichtfläche $A = 2\pi r^2$ (untere Halbkugel). Um Doppelzählung zu vermeiden, wird die
+Emission bei einem *zufällig* getroffenen Licht ignoriert — nur über den Primärstrahl oder
+spekulare (Spiegel/Glas) Pfade bleibt die Lampe direkt sichtbar (`specular`-Flag).
+
+> **Ist NEE Schummeln?** Nein. NEE ist eine **Varianzreduktion** — es konvergiert gegen dasselbe
+> Ergebnis wie der naive Pfad. Es macht den Vergleich *ehrlicher*, weil der wesentliche
+> Unterschied (die indirekte Beleuchtung) nicht mehr im Rauschen untergeht.
 
 ## Was zeigt die Szene?
 
-- **Rote linke Wand** und **grüne rechte Wand** — Farbbluten auf Boden und Rückwand sichtbar
-- **Zwei Boxen** — weiche Schatten durch indirekte Beleuchtung
-- **Progressive Qualität** — das Bild konvergiert mit jedem Frame
+- **Rote linke** und **grüne rechte Wand** — im Path-Tracing-Modus färben sie Boden und
+  benachbarte Flächen ein (*Color Bleeding*), im Whitted-Modus nicht.
+- **Spiegel-Kugel** (perfekte Reflexion) und **Glas-Kugel** (Brechung, IOR 1.5).
+- **Halbkugel-Lampe** an der Decke, die nur nach unten strahlt — deshalb bleibt die Decke dunkel.
 
 ## WebGL vs. WebGPU
 
 | | WebGL2 | WebGPU |
 |---|---|---|
 | Akkumulation | `preserveDrawingBuffer` + Alpha-Blending | **Storage Buffer** (HDR) |
-| Max. Bounces | **2** (ANGLE/D3D11-Limit) | **1–16** (wählbar im GUI) |
 | RNG | Hash pro Frame (stateless) | **Xorshift32** persistenter Zustand pro Pixel |
-| Tone-Mapping | Vor der Akkumulation (LDR-Bias) | Nach der Akkumulation (korrekt) |
+| Tone-Mapping | vor der Akkumulation (LDR-Bias) | nach der Akkumulation (korrekt) |
+| Schattenstrahlen | im Fragment-Shader | im Compute-Shader |
 
-> **Hinweis:** Die unterschiedliche Helligkeit ist beabsichtigt. WebGPU akkumuliert HDR-Werte vor
-> dem Tone-Mapping (physikalisch korrekt). WebGL akkumuliert LDR — ein struktureller Nachteil.
-
-Die Kamera orbitiert per **Maus-Drag**. Bei jeder Bewegung wird die Akkumulation zurückgesetzt.
+Die Kamera orbitiert per **Maus-Drag**. Bei jeder Bewegung und jedem Moduswechsel wird die
+Akkumulation zurückgesetzt.

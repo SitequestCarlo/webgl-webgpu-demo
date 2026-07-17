@@ -50,8 +50,8 @@ export const registry: ShowcaseEntry[] = [
   },
 
   {
-    id: '04-pathtracer', num: '04', title: 'Path Tracer',
-    category: 'rendering', tags: ['Monte Carlo', 'Global Illumination', 'Farbbluten'],
+    id: '04-pathtracer', num: '04', title: 'Rendering-Vergleich',
+    category: 'rendering', tags: ['Whitted', 'Path Tracing', 'NEE', 'Global Illumination'],
     webgl:  './showcases/04-pathtracer/webgl/index.html',
     webgpu: './showcases/04-pathtracer/webgpu/index.html',
     shaderBase: '/showcases/04-pathtracer/shaders',

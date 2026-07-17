@@ -46,6 +46,8 @@ gl.bindVertexArray(null);
 const ptU = {
   res:      gl.getUniformLocation(ptProgram, "uResolution"),
   frame:    gl.getUniformLocation(ptProgram, "uFrameIndex"),
+  mode:     gl.getUniformLocation(ptProgram, "uMode"),
+  bounces:  gl.getUniformLocation(ptProgram, "uMaxBounces"),
   camPos:   gl.getUniformLocation(ptProgram, "uCamPos"),
   camRight: gl.getUniformLocation(ptProgram, "uCamRight"),
   camUp:    gl.getUniformLocation(ptProgram, "uCamUp"),
@@ -133,7 +135,7 @@ async function runBenchmark(): Promise<void> {
   const spf = result.avgMs;
   const sps = (1000 / spf).toFixed(1);
   resultsEl.textContent = [
-    `[WebGL] Path Tracer`,
+    `[WebGL] Rendering-Vergleich`,
     `Auflösung: ${canvas.width}×${canvas.height} px`,
     `Akkum-Frames: ${frameIndex}`,
     `Samples/s:  ${sps}`,
@@ -142,7 +144,7 @@ async function runBenchmark(): Promise<void> {
   ].join("\n");
 }
 
-const gui = new GUI({ title: "Path Tracer (WebGL)" });
+const gui = new GUI({ title: "Rendering-Vergleich (WebGL)" });
 const frameCtrl = gui.add({ frames: 0 }, "frames").name("Akkum-Frames").disable();
 const msCtrl    = gui.add({ ms: "– ms" }, "ms").name("Frame-Zeit (GPU)").disable();
 setInterval(() => {
@@ -151,6 +153,10 @@ setInterval(() => {
     gpuMsLast > 0 ? `${gpuMsLast.toFixed(2)} ms` : "Benchmark starten"
   );
 }, 200);
+const MODES = { "Whitted-Raytracing": 0, "Path Tracing (naiv)": 1, "Path Tracing (NEE)": 2 } as const;
+const ptParams = { mode: 2, maxBounces: 8 };
+gui.add(ptParams, "mode", MODES).name("Modus").onChange(resetAccum);
+gui.add(ptParams, "maxBounces", 1, 16, 1).name("Max. Bounces").onChange(resetAccum);
 gui.add({ reset: resetAccum }, "reset").name("Szene zurücksetzen");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 gui.add({ run: () => void runBenchmark() }, "run").name("Benchmark starten");
@@ -176,6 +182,8 @@ function render(now: number): void {
   gl.useProgram(ptProgram);
   gl.uniform2f(ptU.res, w, h);
   gl.uniform1i(ptU.frame, frameIndex);
+  gl.uniform1i(ptU.mode, ptParams.mode);
+  gl.uniform1i(ptU.bounces, ptParams.maxBounces);
   gl.uniform3fv(ptU.camPos,   cam.pos);
   gl.uniform3fv(ptU.camRight, cam.right);
   gl.uniform3fv(ptU.camUp,    cam.up);

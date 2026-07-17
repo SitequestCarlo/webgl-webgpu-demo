@@ -35,7 +35,7 @@ const PARAMS_SIZE = 256;
 const paramsBuf   = createUniformBuffer(device, PARAMS_SIZE);
 const blitParamsBuf = createUniformBuffer(device, 16);
 
-let accumBuf: GPUBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+let accumBuf: GPUBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
 let rngBuf:   GPUBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
 let accumSize = 0;
 
@@ -74,7 +74,7 @@ function rebuildBuffers(w: number, h: number): void {
   if (size === accumSize) return;
   accumSize = size;
   accumBuf.destroy(); rngBuf.destroy();
-  accumBuf = createStorageBuffer(device, size);
+  accumBuf = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
   rngBuf   = createStorageBuffer(device, w * h * 4);
   computeBindGroup = device.createBindGroup({ layout: computeBGL, entries: [
     { binding: 0, resource: { buffer: paramsBuf } },
@@ -131,10 +131,36 @@ const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // ms/Frame ist für Path Tracer aussagekräftiger
 
 const benchmark = new BenchmarkRun(60, 300);
-let pendingCapture = false;
 
-function captureWebp(): void {
-  canvas.toBlob((blob) => {
+// Screenshot: HDR-Akkumulations-Buffer per GPU-Readback lesen und auf der CPU tone-mappen.
+// (Ein direkter canvas.toBlob-Readback liefert bei WebGPU nach Frame-Ende ein leeres Bild.)
+async function captureWebp(): Promise<void> {
+  const W = canvas.width, H = canvas.height;
+  const bytes = W * H * 16;
+  if (accumSize < bytes) return;
+  const staging = device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const enc = device.createCommandEncoder();
+  enc.copyBufferToBuffer(accumBuf, 0, staging, 0, bytes);
+  device.queue.submit([enc.finish()]);
+  await staging.mapAsync(GPUMapMode.READ);
+  const data = new Float32Array(staging.getMappedRange()).slice();
+  staging.unmap(); staging.destroy();
+
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    const cnt = data[i * 4 + 3];
+    let r = 0, g = 0, b = 0;
+    if (cnt >= 0.5) {
+      r = data[i * 4] / cnt; g = data[i * 4 + 1] / cnt; b = data[i * 4 + 2] / cnt;
+      r = r / (r + 1); g = g / (g + 1); b = b / (b + 1);          // Reinhard
+      r = Math.pow(r, 1 / 2.2); g = Math.pow(g, 1 / 2.2); b = Math.pow(b, 1 / 2.2); // sRGB
+    }
+    out[i * 4] = r * 255; out[i * 4 + 1] = g * 255; out[i * 4 + 2] = b * 255; out[i * 4 + 3] = 255;
+  }
+  const off = document.createElement("canvas");
+  off.width = W; off.height = H;
+  off.getContext("2d")!.putImageData(new ImageData(out, W, H), 0, 0);
+  off.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -155,7 +181,7 @@ async function runBenchmark(): Promise<void> {
   const sps = (1000 / result.avgMs).toFixed(1);
   const src = supportsTimestamp ? "GPU-Timestamps" : "CPU (gl.finishäquivalent)";
   resultsEl.textContent = [
-    `[WebGPU] Path Tracer`,
+    `[WebGPU] Rendering-Vergleich`,
     `Auflösung: ${canvas.width}×${canvas.height} px`,
     `Akkum-Frames: ${frameIndex}`,
     `Samples/s:  ${sps}`,
@@ -164,7 +190,7 @@ async function runBenchmark(): Promise<void> {
   ].join("\n");
 }
 
-const gui = new GUI({ title: "Path Tracer (WebGPU)" });
+const gui = new GUI({ title: "Rendering-Vergleich (WebGPU)" });
 const frameCtrl = gui.add({ frames: 0 }, "frames").name("Akkum-Frames").disable();
 const msCtrl    = gui.add({ ms: supportsTimestamp ? "– ms (GPU)" : "– ms (CPU)" }, "ms").name("Frame-Zeit").disable();
 const tsLabel   = supportsTimestamp ? " (GPU-Timestamps)" : " (CPU-Fallback)";
@@ -180,11 +206,13 @@ setInterval(() => {
   }
 }, 200);
 
-const ptParams = { maxBounces: 8 };
+const MODES = { "Whitted-Raytracing": 0, "Path Tracing (naiv)": 1, "Path Tracing (NEE)": 2 } as const;
+const ptParams = { mode: 2, maxBounces: 8 };
+gui.add(ptParams, "mode", MODES).name("Modus").onChange(resetAccum);
 gui.add(ptParams, "maxBounces", 1, 16, 1).name("Max. Bounces").onChange(resetAccum);
 
 gui.add({ reset: resetAccum }, "reset").name("Szene zurücksetzen");
-gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
+gui.add({ shot: () => { void captureWebp(); } }, "shot").name("Screenshot (PNG)");
 gui.add({ run: () => void runBenchmark() }, "run").name("Benchmark starten");
 
 // --- Render-Loop ---------------------------------------------------------
@@ -200,7 +228,7 @@ function render(now: number): void {
   const pdata = new Float32Array(PARAMS_SIZE / 4);
   const udata = new Uint32Array(pdata.buffer);
   udata[0] = W; udata[1] = H; udata[2] = frameIndex; udata[3] = ptParams.maxBounces;
-  pdata[4] = cam.pos[0]; pdata[5] = cam.pos[1]; pdata[6] = cam.pos[2]; pdata[7] = 0;
+  pdata[4] = cam.pos[0]; pdata[5] = cam.pos[1]; pdata[6] = cam.pos[2]; pdata[7] = ptParams.mode;
   pdata[8] = cam.fwd[0]; pdata[9] = cam.fwd[1]; pdata[10] = cam.fwd[2]; pdata[11] = 0;
   pdata[12] = cam.right[0]; pdata[13] = cam.right[1]; pdata[14] = cam.right[2]; pdata[15] = 0;
   pdata[16] = cam.up[0]; pdata[17] = cam.up[1]; pdata[18] = cam.up[2]; pdata[19] = 0;
@@ -256,7 +284,6 @@ function render(now: number): void {
 
   frameIndex++;
 
-  if (pendingCapture) { pendingCapture = false; captureWebp(); }
   stats.update();
   benchmark.sample(now);
   requestAnimationFrame(render);
