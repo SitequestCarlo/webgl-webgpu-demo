@@ -10,6 +10,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main:          resolve(__dirname, "index.html"),
+        "00-hello-gl":    resolve(__dirname, "showcases/00-hello-triangle/webgl/index.html"),
+        "00-hello-gpu":   resolve(__dirname, "showcases/00-hello-triangle/webgpu/index.html"),
+        "00-hello":       resolve(__dirname, "showcases/00-hello-triangle/index.html"),
         "01-shading-gl":  resolve(__dirname, "showcases/01-shading/index.html"),
         "01-shading-gpu": resolve(__dirname, "showcases/01-shading/webgpu/index.html"),
         "02-pbr-gl":      resolve(__dirname, "showcases/02-pbr/index.html"),

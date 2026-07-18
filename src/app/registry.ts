@@ -17,6 +17,15 @@ export const registry: ShowcaseEntry[] = [
   },
 
   {
+    id: '00-hello-triangle', num: '00', title: 'Hello Triangle',
+    category: 'rendering', tags: ['Einstieg', 'Shader', 'Minimal'],
+    webgl:  './showcases/00-hello-triangle/webgl/index.html',
+    webgpu: './showcases/00-hello-triangle/webgpu/index.html',
+    shaderBase: '/showcases/00-hello-triangle',
+    fileOrder: { webgl: ['main.ts'], webgpu: ['main.ts'] },
+  },
+
+  {
     id: '01-shading', num: '01', title: 'Shading-Modelle',
     category: 'rendering', tags: ['Blinn-Phong', 'PBR', 'Toon', 'Flat', 'Gouraud'],
     webgl: './showcases/01-shading/index.html',
