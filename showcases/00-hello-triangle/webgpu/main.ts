@@ -18,7 +18,23 @@ const format  = navigator.gpu.getPreferredCanvasFormat();
 context.configure({ device, format, alphaMode: 'opaque' });
 
 // ---------------------------------------------------------------------------
-// 2. Shader-Quellcode als Template-Literal (inline, keine externe Datei)
+// 2. Vertex-Daten: Position (x,y) + Farbe (r,g,b) interleaved – identisch zu WebGL
+// ---------------------------------------------------------------------------
+//   x      y     r     g     b
+const vertices = new Float32Array([
+     0.0,  0.6,  1.0,  0.0,  0.0,   // oben   – rot
+    -0.6, -0.4,  0.0,  1.0,  0.0,   // links  – grün
+     0.6, -0.4,  0.0,  0.0,  1.0,   // rechts – blau
+]);
+
+const vertexBuf = device.createBuffer({
+    size:  vertices.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+});
+device.queue.writeBuffer(vertexBuf, 0, vertices);
+
+// ---------------------------------------------------------------------------
+// 3. Shader-Quellcode als Template-Literal und Render-Pipeline erstellen
 // ---------------------------------------------------------------------------
 const SHADER_SRC = /* wgsl */`
 struct VertexIn {
@@ -44,25 +60,6 @@ fn fs_main(@location(0) color: vec3<f32>) -> @location(0) vec4<f32> {
 }
 `;
 
-// ---------------------------------------------------------------------------
-// 3. Vertex-Daten: Position (x,y) + Farbe (r,g,b) interleaved – identisch zu WebGL
-// ---------------------------------------------------------------------------
-//   x      y     r     g     b
-const vertices = new Float32Array([
-     0.0,  0.6,  1.0,  0.0,  0.0,   // oben   – rot
-    -0.6, -0.4,  0.0,  1.0,  0.0,   // links  – grün
-     0.6, -0.4,  0.0,  0.0,  1.0,   // rechts – blau
-]);
-
-const vertexBuf = device.createBuffer({
-    size:  vertices.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-});
-device.queue.writeBuffer(vertexBuf, 0, vertices);
-
-// ---------------------------------------------------------------------------
-// 4. Shader-Modul und Render-Pipeline erstellen
-// ---------------------------------------------------------------------------
 const shaderModule = device.createShaderModule({ code: SHADER_SRC });
 
 const STRIDE = 5 * 4; // 5 floats * 4 Bytes
@@ -89,7 +86,7 @@ const pipeline = device.createRenderPipeline({
 });
 
 // ---------------------------------------------------------------------------
-// 5. Einmalig zeichnen (kein Render-Loop nötig – das Bild ändert sich nicht)
+// 4. Einmalig zeichnen (kein Render-Loop nötig – das Bild ändert sich nicht)
 // ---------------------------------------------------------------------------
 const encoder    = device.createCommandEncoder();
 const renderPass = encoder.beginRenderPass({
