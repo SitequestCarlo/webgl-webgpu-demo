@@ -70,7 +70,7 @@ const params = { segments: readBenchmarkValue() ?? 200, rings: 100, autoRotate: 
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const cpuTimer = new CpuTimer();
 let depth = createDepthTexture(device, 1, 1);
 
@@ -78,7 +78,7 @@ const gui = new GUI({ title: "Vertex Throughput (WebGPU)" });
 let pendingCapture = false;
 const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
 const msCtrl  = gui.add({ ms: supportsTs ? "– ms (GPU)" : "– ms" }, "ms").name("GPU-Zeit").disable();
-gui.add(params, "segments", 10, 2000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
+gui.add(params, "segments", 10, 20000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
 gui.add(params, "heavyVS").name("Heavy VS").onChange((v: boolean) => { pipeline = v ? pipelineHeavy : pipelineSimple; });
 gui.add(params, "autoRotate").name("Rotation");

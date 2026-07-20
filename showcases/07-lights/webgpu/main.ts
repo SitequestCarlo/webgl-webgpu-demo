@@ -21,7 +21,7 @@ import ML_WGSL from "../shaders/gpu/multi-light.wgsl?raw";
 // 1. Canvas & WebGPU-Kontext
 // ---------------------------------------------------------------------------
 
-const MAX_LIGHTS = 256;
+const MAX_LIGHTS = 1024;
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -115,7 +115,7 @@ const params = { numLights: readBenchmarkValue() ?? 16, autoRotate: true };
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer  = new GpuTimer(device);
 const cpuTimer  = new CpuTimer();
 

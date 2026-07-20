@@ -129,13 +129,13 @@ const params = { N: readBenchmarkValue() ?? 256, dt: 0.002, softening: 0.1 };
 rebuild();
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer = new GlTimer(gl);
 const cpuTimer = new CpuTimer();
 
 const gui = new GUI({ title: "N-Body (WebGL)" });
 let pendingCapture = false;
-gui.add(params, "N", [64, 128, 256, 512, 1024, 2048, 4096]).name("N Partikel").onChange((v: number) => { N = v; rebuild(); });
+gui.add(params, "N", [256, 512, 1024, 2048, 4096, 8192, 16384]).name("N Partikel").onChange((v: number) => { N = v; rebuild(); });
 gui.add(params, "dt", 0.0005, 0.01, 0.0001).name("Zeitschritt");
 gui.add(params, "softening", 0.01, 1.0, 0.01).name("Softening");
 gui.add({ run: async () => {

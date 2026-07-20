@@ -8,6 +8,9 @@
  *
  * Aufruf:
  *   npm run benchmark
+ *   npm run benchmark -- --only 08         (nur 08-nbody)
+ *   npm run benchmark -- --only 07,08      (07 und 08)
+ *   npm run benchmark -- --only 08 --api webgpu   (nur WebGPU-Seite von 08)
  *   BASE_URL=http://localhost:5173 npm run benchmark
  *   BROWSER_CHANNEL=chrome npm run benchmark   (System-Chrome; Default)
  *   BROWSER_CHANNEL= npm run benchmark          (gebündeltes Playwright-Chromium)
@@ -17,6 +20,18 @@
  *   Daher wird standardmäßig das SYSTEM-Chrome verwendet (channel: 'chrome') und
  *   Vulkan aktiviert. Die Adapter-Zeilen im Log ([WebGPU] adapter / [WebGL] renderer)
  *   zeigen, ob beide APIs dieselbe echte GPU nutzen.
+ *
+ * TIPP (GPU-Takt-Stabilität, Linux/NVIDIA):
+ *   GPU-DVFS verursacht Ausreißer bei kleinen Workloads (avg >> med). Um den Takt
+ *   auf einen festen Wert zu sperren und damit Mess-Rauschen zu minimieren:
+ *
+ *     sudo nvidia-smi -pm 1                         # Persistence Mode
+ *     sudo nvidia-smi --lock-gpu-clocks=<base_mhz>  # Takt fixieren
+ *     npm run benchmark
+ *     sudo nvidia-smi --reset-gpu-clocks            # danach zurücksetzen
+ *
+ *   Alternativ reicht oft, alle anderen GPU-Prozesse zu beenden (Browser-Fenster,
+ *   Video-Decoder, DE-Compositing-Offloading).
  *
  * Ausgabe:
  *   benchmark-results/<showcase-id>.csv   (je Showcase)
@@ -41,6 +56,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT        = join(__dirname, '..');
 const RESULTS_DIR = join(ROOT, 'benchmark-results');
 const BASE_URL    = process.env.BASE_URL ?? 'http://localhost:5173';
+
+// ---------------------------------------------------------------------------
+// CLI-Filter: --only <id>[,<id>...]  --api webgl|webgpu
+// ---------------------------------------------------------------------------
+
+const argv = process.argv.slice(2);
+const onlyIdx = argv.indexOf('--only');
+const onlyArg = onlyIdx !== -1 ? argv[onlyIdx + 1] : null;
+const onlyIds = onlyArg ? onlyArg.split(',').map(s => s.trim()) : null;
+
+const apiIdx = argv.indexOf('--api');
+const apiFilter = apiIdx !== -1 ? argv[apiIdx + 1]?.toLowerCase() : null; // 'webgl'|'webgpu'|null
 
 // ---------------------------------------------------------------------------
 // System-Info (einmalig zu Beginn geloggt: OS, CPU, RAM, GPU, Browser-Version)
@@ -129,7 +156,7 @@ const SHOWCASES = [
     param: {
       role: 'spinbutton',
       label: 'N Objekte',
-      values: [100, 500, 1000, 2000, 5000, 10000, 20000],
+      values: [500, 1000, 2000, 5000, 10000, 20000, 40000],
     },
   },
   {
@@ -143,7 +170,7 @@ const SHOWCASES = [
       // "Segmente" steuert die Dreieckzahl; Ringe bleibt auf Standardwert (100)
       role: 'spinbutton',
       label: 'Segmente',
-      values: [50, 100, 200, 500, 1000, 2000],
+      values: [500, 1000, 2000, 4000, 8000, 16000],
     },
   },
   {
@@ -156,7 +183,7 @@ const SHOWCASES = [
     param: {
       role: 'spinbutton',
       label: 'Lichtquellen',
-      values: [1, 4, 8, 16, 32, 64, 128, 256],
+      values: [8, 16, 32, 64, 128, 256, 512, 1024],
     },
   },
   {
@@ -170,7 +197,7 @@ const SHOWCASES = [
       // lil-gui rendert Dropdown (<select>) für diskrete Werteliste
       role: 'combobox',
       label: 'N Partikel',
-      values: [64, 128, 256, 512, 1024, 2048, 4096],
+      values: [256, 512, 1024, 2048, 4096, 8192, 16384],
     },
   },
   {
@@ -192,7 +219,7 @@ const SHOWCASES = [
 // CSV-Hilfsfunktionen
 // ---------------------------------------------------------------------------
 
-const CSV_HEADER = 'showcase,api,n,metric,frames,durationMs,avgFps,avgMs,medMs,p95Ms,minMs,maxMs,cpuMedMs,gpuMedMs,frameMedMs';
+const CSV_HEADER = 'showcase,api,n,metric,frames,durationMs,avgFps,avgMs,medMs,p5Ms,p95Ms,minMs,maxMs,cpuAvgMs,cpuMedMs,cpuP5Ms,cpuP95Ms,cpuMinMs,cpuMaxMs,gpuAvgMs,gpuMedMs,gpuP5Ms,gpuP95Ms,gpuMinMs,gpuMaxMs,frameMedMs';
 
 /** @param {(string|number)[]} cells */
 function toCsvRow(cells) {
@@ -219,11 +246,22 @@ function rowFromResult(showcaseId, api, n, r) {
     r.avgFps.toFixed(2),
     r.avgMs.toFixed(3),
     r.medMs.toFixed(3),
+    r.p5Ms.toFixed(3),
     r.p95Ms.toFixed(3),
     r.minMs.toFixed(3),
     r.maxMs.toFixed(3),
+    fx(r.cpu?.avgMs),
     fx(r.cpu?.medMs),
+    fx(r.cpu?.p5Ms),
+    fx(r.cpu?.p95Ms),
+    fx(r.cpu?.minMs),
+    fx(r.cpu?.maxMs),
+    fx(r.gpu?.avgMs),
     fx(r.gpu?.medMs),
+    fx(r.gpu?.p5Ms),
+    fx(r.gpu?.p95Ms),
+    fx(r.gpu?.minMs),
+    fx(r.gpu?.maxMs),
     fx(r.frame?.medMs),
   ]);
 }
@@ -367,14 +405,26 @@ async function main() {
   await logSystemInfo(browser);
 
   try {
-    for (const showcase of SHOWCASES) {
-      console.log(`\n${'='.repeat(60)}`);
-      console.log(`  ${showcase.label}  (${showcase.id})`);
-      console.log('='.repeat(60));
+    const activeShowcases = onlyIds
+      ? SHOWCASES.filter(s => onlyIds.some(id => s.id.includes(id)))
+      : SHOWCASES;
+    if (onlyIds && activeShowcases.length === 0) {
+      console.log(`  ⚠  Kein Showcase gefunden für --only ${onlyArg}`);
+      console.log(`  Verfügbar: ${SHOWCASES.map(s => s.id).join(', ')}`);
+    }
+    const activeApis = /** @type {('webgl'|'webgpu')[]} */ (
+      apiFilter ? [apiFilter] : ['webgl', 'webgpu']
+    );
 
-      for (const api of /** @type {('webgl'|'webgpu')[]} */(['webgl', 'webgpu'])) {
+    for (const showcase of activeShowcases) {
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`  ${showcase.label}  (${showcase.id})`);
+      console.log('─'.repeat(60));
+
+      for (const api of activeApis) {
+        if (!showcase.apis[api]) continue; // API nicht vorhanden für diesen Showcase
         const url = `${BASE_URL}/${showcase.apis[api]}`;
-        console.log(`\n  [${api.toUpperCase()}]  ${url}`);
+        console.log(`\n  [${api.toUpperCase()}]`);
 
         /** @type {string[]} */
         const apiCsvRows = [];
@@ -414,17 +464,20 @@ async function main() {
             apiCsvRows.push(row);
             allCsvRows.push(row);
 
+            const cpuMed  = result.cpu?.medMs  != null ? `${result.cpu.medMs.toFixed(2)}` : '—';
+            const gpuMed  = result.gpu?.medMs  != null ? `${result.gpu.medMs.toFixed(2)}` : '—';
             console.log(
               `[${result.metric ?? 'frame'}]  ` +
               `avg ${result.avgMs.toFixed(2)} ms  ` +
               `med ${result.medMs.toFixed(2)} ms  ` +
               `p95 ${result.p95Ms.toFixed(2)} ms  ` +
+              `│ cpu ${cpuMed}  gpu ${gpuMed} ms  ` +
               `(cpu ${result.cpuCount ?? 0} / gpu ${result.gpuCount ?? 0} samples)`,
             );
           } catch (err) {
             console.log(`FEHLER: ${err.message}`);
             // 15 Spalten: showcase,api,n,metric + 10 Leerspalten + Fehlermeldung (frameMedMs-Position)
-            const errRow = toCsvRow([showcase.id, api, n, 'error', '', '', '', '', '', '', '', '', '', '', err.message]);
+            const errRow = toCsvRow([showcase.id, api, n, 'error', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', err.message]);
             apiCsvRows.push(errRow);
             allCsvRows.push(errRow);
           } finally {
@@ -435,16 +488,15 @@ async function main() {
         // CSV pro Showcase + API schreiben (webgl / webgpu getrennt)
         const outPath = join(RESULTS_DIR, `${showcase.id}-${api}-${timestamp}.csv`);
         writeFileSync(outPath, [CSV_HEADER, ...apiCsvRows].join('\n') + '\n', 'utf8');
-        console.log(`  -> ${outPath}`);
       }
     }
 
     // Kombinations-CSV
     const allPath = join(RESULTS_DIR, `all-benchmarks-${timestamp}.csv`);
     writeFileSync(allPath, [CSV_HEADER, ...allCsvRows].join('\n') + '\n', 'utf8');
-    console.log(`\n${'='.repeat(60)}`);
+    console.log(`\n${'─'.repeat(60)}`);
     console.log(`  Gesamtergebnis: ${allPath}`);
-    console.log('='.repeat(60));
+    console.log('─'.repeat(60));
   } finally {
     await browser.close();
     console.log(`  Log gespeichert: ${logPath}`);

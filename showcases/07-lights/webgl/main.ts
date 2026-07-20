@@ -21,7 +21,7 @@ import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
 // ---------------------------------------------------------------------------
 
 /** Maximale Lichtanzahl — compile-time Grenze des GLSL-Arrays. */
-const MAX_LIGHTS = 256;
+const MAX_LIGHTS = 1024;
 
 // Shader aus einer kombinierten GLSL-Datei aufteilen (VS || FS, getrennt durch #version)
 const [ML_VS_GLSL, ML_FS_GLSL] = splitGLSL(multiLightGlsl);
@@ -42,7 +42,7 @@ gl.clearColor(0.02, 0.02, 0.04, 1);
 // 2. Shader-Programm
 // ---------------------------------------------------------------------------
 
-// Shader einmalig mit MAX_LIGHTS=256 kompilieren.
+// Shader einmalig mit MAX_LIGHTS=1024 kompilieren.
 // uNumLights steuert zur Laufzeit, wie viele der 256 Slots aktiv sind.
 const program = createProgram(gl, ML_VS_GLSL, ML_FS_GLSL);
 const U = getUniforms(gl, program, [
@@ -120,7 +120,7 @@ let lights   = buildLights(params.numLights);
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // ms/Frame statt FPS anzeigen
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer  = new GlTimer(gl);
 const cpuTimer  = new CpuTimer();
 

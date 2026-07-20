@@ -91,7 +91,7 @@ buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer  = new GlTimer(gl);
 const cpuTimer  = new CpuTimer();
 
@@ -99,7 +99,7 @@ const gui = new GUI({ title: "Vertex Throughput (WebGL)" });
 let pendingCapture = false;
 const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
   const msCtrl  = gui.add({ ms: "– ms" }, "ms").name(gpuTimer.enabled ? "GPU-Zeit (Query)" : "GPU-Zeit").disable();
-gui.add(params, "segments", 10, 2000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
+gui.add(params, "segments", 10, 20000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
 gui.add(params, "heavyVS").name("Heavy VS").onChange((v: boolean) => {
   program = v ? programHeavy : programSimple;

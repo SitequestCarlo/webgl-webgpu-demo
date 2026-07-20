@@ -30,10 +30,12 @@ for (int i = 0; i < N; i++) {
 ## WebGPU: Echter Compute-Shader
 
 ```wgsl
+override N: u32 = 256u;  // Pipeline-Override-Konstante, gesetzt via constants:{N:n}
+
 @compute @workgroup_size(64)  // 64 Threads parallel
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
-    for (var j = 0u; j < uN; j++) {
+    for (var j = 0u; j < N; j++) {  // N ist Compile-time-Konstante
         // Direkter Storage-Buffer-Zugriff (kein Textur-Overhead)
         let d = inBuf[j].pos.xyz - inBuf[i].pos.xyz;
         acc += d * (inBuf[j].pos.w * inverseSqrt(dot(d,d) + s*s));
@@ -42,6 +44,26 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 ```
 
 **Limit:** N = 4096+ interaktiv möglich.
+
+## Fairness des Vergleichs
+
+WebGL kompiliert den Simulations-Shader für jeden N-Wert neu (`#define N` wird ersetzt),
+wodurch die Schleifengrenze zur Übersetzungszeit bekannt ist und der Compiler Loop-Unrolling
+sowie aggressiveres Instruction-Scheduling anwenden kann.
+
+Damit der WebGPU-Compute-Shader unter denselben Bedingungen antritt, nutzt diese
+Implementierung eine **Pipeline-Override-Konstante** ([WebGPU Spec §10.3.1.2](https://www.w3.org/TR/webgpu/#dom-gpudevice-createcomputepipeline)):
+
+```typescript
+// In rebuild(n) – wird bei jedem N-Wechsel aufgerufen:
+computePipeline = device.createComputePipeline({
+  compute: { module: computeShaderModule, entryPoint: "main", constants: { N: n } },
+});
+```
+
+Dawn (Chrome's WebGPU-Backend) spezialisiert die Pipeline pro N-Wert – äquivalent
+zur Shader-Neukompilierung in WebGL. Ein naiver Ansatz (N als `var<uniform>`) würde
+diesen Vorteil unberücksichtigt lassen und den Vergleich verzerren.
 
 > Zur allgemeinen Messmethodik (BenchmarkRun, VSync-Anforderung, Timing-Semantik)
 > siehe das [Projekt-README](../../README.md#benchmark-methodik).

@@ -105,7 +105,7 @@ const cpuTimer  = new CpuTimer();
 const gpuTimer  = new GpuTimer(device);
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120, primary: "cpu" });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500, primary: "cpu" });
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Draw-Calls (WebGPU)" });
