@@ -9,10 +9,10 @@ import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import {
-  getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize, GlTimer,
+  getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize, GlTimer, glFenceAsync,
 } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
 
@@ -21,7 +21,7 @@ import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
 // ---------------------------------------------------------------------------
 
 /** Maximale Lichtanzahl — compile-time Grenze des GLSL-Arrays. */
-const MAX_LIGHTS = 256;
+const MAX_LIGHTS = 1024;
 
 // Shader aus einer kombinierten GLSL-Datei aufteilen (VS || FS, getrennt durch #version)
 const [ML_VS_GLSL, ML_FS_GLSL] = splitGLSL(multiLightGlsl);
@@ -42,7 +42,7 @@ gl.clearColor(0.02, 0.02, 0.04, 1);
 // 2. Shader-Programm
 // ---------------------------------------------------------------------------
 
-// Shader einmalig mit MAX_LIGHTS=256 kompilieren.
+// Shader einmalig mit MAX_LIGHTS=1024 kompilieren.
 // uNumLights steuert zur Laufzeit, wie viele der 256 Slots aktiv sind.
 const program = createProgram(gl, ML_VS_GLSL, ML_FS_GLSL);
 const U = getUniforms(gl, program, [
@@ -115,12 +115,12 @@ function hsl(h: number, s: number, l: number): [number, number, number] {
 // 5. GUI & Benchmark
 // ---------------------------------------------------------------------------
 
-const params = { numLights: 16, autoRotate: true };
+const params = { numLights: readBenchmarkValue() ?? 16, autoRotate: true };
 let lights   = buildLights(params.numLights);
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // ms/Frame statt FPS anzeigen
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer  = new GlTimer(gl);
 const cpuTimer  = new CpuTimer();
 
@@ -149,7 +149,7 @@ gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PN
 let angle = 0;
 let lastT = performance.now();
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   const dt = (now - lastT) / 1000; lastT = now;
 
   // Canvas-Resize: Viewport und Projektionsmatrix anpassen
@@ -209,6 +209,7 @@ function render(now: number): void {
   }
 
   stats.update();
+  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) → Timer-Query verfügbar
   benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }

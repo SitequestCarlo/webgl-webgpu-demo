@@ -3,6 +3,21 @@
 
 import Stats from "stats.js";
 
+// Liest den Benchmark-Parameterwert aus der URL (?v=…). Erlaubt es, ein Showcase
+// direkt mit dem korrekten Wert zu laden (statt den lil-gui-Slider zu animieren) —
+// wichtig für den automatisierten Runner und reproduzierbare Messungen.
+export function readBenchmarkValue(): number | null {
+  const v = new URLSearchParams(location.search).get("v");
+  if (v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// true, wenn die URL ?autostart enthält → Benchmark automatisch starten.
+export function shouldAutostart(): boolean {
+  return new URLSearchParams(location.search).has("autostart");
+}
+
 export function createStatsPanel(container: HTMLElement = document.body): Stats {
   const stats = new Stats();
   stats.showPanel(0); // 0: fps, 1: ms, 2: mb
@@ -28,9 +43,10 @@ export interface BenchmarkResult {
   // Primärmetrik (je nach Showcase CPU- oder GPU-Zeit; Fallback Frame-Zeit):
   avgMs: number;
   medMs: number;
+  p5Ms: number;
+  p95Ms: number;
   minMs: number;
   maxMs: number;
-  p95Ms: number;
   // Alle drei Dimensionen immer mitgeführt (undefined, falls nicht gemessen).
   // Erst dadurch wird sichtbar, OB ein Showcase CPU- oder GPU-bound ist.
   cpu?: SampleStats;
@@ -62,9 +78,10 @@ export interface BenchmarkOptions {
 export interface SampleStats {
   avgMs: number;
   medMs: number;
+  p5Ms: number;
+  p95Ms: number;
   minMs: number;
   maxMs: number;
-  p95Ms: number;
 }
 
 function computeStats(samples: number[]): SampleStats {
@@ -72,13 +89,15 @@ function computeStats(samples: number[]): SampleStats {
   const n = sorted.length;
   const sum = sorted.reduce((s, v) => s + v, 0);
   const mid = Math.floor(n / 2);
+  const p5Index  = Math.min(n - 1, Math.floor(n * 0.05));
   const p95Index = Math.min(n - 1, Math.floor(n * 0.95));
   return {
     avgMs: sum / n,
     medMs: n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid],
+    p5Ms:  sorted[p5Index],
+    p95Ms: sorted[p95Index],
     minMs: sorted[0],
     maxMs: sorted[n - 1],
-    p95Ms: sorted[p95Index],
   };
 }
 
@@ -199,9 +218,10 @@ export class BenchmarkRun {
       avgFps: 1000 / frame.avgMs,
       avgMs: primary.avgMs,
       medMs: primary.medMs,
+      p5Ms:  primary.p5Ms,
+      p95Ms: primary.p95Ms,
       minMs: primary.minMs,
       maxMs: primary.maxMs,
-      p95Ms: primary.p95Ms,
       cpu,
       gpu,
       frame,

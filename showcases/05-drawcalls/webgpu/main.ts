@@ -15,7 +15,7 @@ import {
   VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer,
 } from "../../../src/shared/webgpu";
 import { createCube } from "../../../src/shared/geometry";
-import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
 import BENCH_WGSL from "../shaders/gpu/blinn-phong.wgsl?raw";
 
@@ -97,7 +97,7 @@ function rebuildObjects(n: number): void {
 
 // --- Params & GUI ------------------------------------------------------------
 
-const params = { n: 1000, autoRotate: true };
+const params = { n: readBenchmarkValue() ?? 1000, autoRotate: true };
 let angle = 0;
 rebuildObjects(params.n);
 
@@ -105,7 +105,7 @@ const cpuTimer  = new CpuTimer();
 const gpuTimer  = new GpuTimer(device);
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60, primary: "cpu" });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500, primary: "cpu" });
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Draw-Calls (WebGPU)" });
@@ -127,7 +127,7 @@ setInterval(() => { (cpuCtrl as { setValue:(v:string)=>void }).setValue(`${cpuTi
 
 let lastT = performance.now();
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   const dt = (now - lastT) / 1000; lastT = now;
   if (resizeWebGPUCanvas(canvas)) {
     depth.destroy();
@@ -198,8 +198,10 @@ function render(now: number): void {
     }, 'image/png');
   }
 
+  if (benchmark.isRunning) await device.queue.onSubmittedWorkDone(); // Drain (yield) → Timestamp-Readback fertig
+  const gpuMs = gpuTimer.takeSample() ?? undefined;
   stats.update();
-  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
+  benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

@@ -3,7 +3,11 @@
 
 export function getWebGL2(canvas: HTMLCanvasElement): WebGL2RenderingContext {
   const gl = canvas.getContext("webgl2", {
-    antialias: true,
+    // Fairer API-Vergleich (siehe toji.dev/webgpu-best-practices/webgl-performance-comparison):
+    // WebGPU-Canvas ist single-sampled + opaque, daher WebGL ebenso — sonst leistet
+    // WebGL durch MSAA + Alpha-Blending unbemerkt Mehrarbeit.
+    antialias: false,
+    alpha: false,
     powerPreference: "high-performance",
   });
   if (!gl) {
@@ -93,6 +97,39 @@ export function resizeCanvasToDisplaySize(
     return true;
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Asynchrone GPU-Synchronisation (für zuverlässige GPU-Timestamps)
+// ---------------------------------------------------------------------------
+
+// Yield an den Event-Loop OHNE die ~4ms-Drosselung von setTimeout(0). Nötig, damit
+// der GPU-Prozess den Fence-Status aktualisieren kann (synchrones Busy-Wait
+// funktioniert im Browser NICHT — die GPU läuft in einem eigenen Prozess).
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => resolve();
+    ch.port2.postMessage(null);
+  });
+}
+
+// Wartet ASYNCHRON (mit Event-Loop-Yields) bis die GPU-Arbeit dieses Frames fertig
+// ist. Wichtig: gl.finish() ist in Chrome ein No-Op und synchrones Busy-Wait auf
+// clientWaitSync stallt nur (der GPU-Prozess kommt nie zum Zug). Nach glFenceAsync()
+// sind die EXT_disjoint_timer_query-Ergebnisse (echte GPU-ns) zuverlässig verfügbar.
+export async function glFenceAsync(gl: WebGL2RenderingContext): Promise<void> {
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  if (!sync) { gl.flush(); return; }
+  gl.flush(); // Fence-Kommando abschicken
+  const deadline = performance.now() + 1000; // Sicherheitsobergrenze
+  for (;;) {
+    const status = gl.clientWaitSync(sync, 0, 0);
+    if (status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED) break;
+    if (status === gl.WAIT_FAILED || performance.now() > deadline) break;
+    await yieldToEventLoop(); // Event-Loop laufen lassen → GPU-Prozess signalisiert den Fence
+  }
+  gl.deleteSync(sync);
 }
 
 // ---------------------------------------------------------------------------

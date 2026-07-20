@@ -1,16 +1,21 @@
 // N-Body Simulation Showcase – WebGPU
 // Gravitationssimulation O(N²): jedes Partikel wird von allen anderen angezogen.
 //
-// WebGPU-Ansatz: Compute-Shader mit Storage Buffers (Ping-Pong).
+// WebGPU-Ansatz: Compute-Shader mit Storage Buffers (Ping-Pong, SoA-Layout).
 // Jeder GPU-Thread berechnet die Kräfte für 1 Partikel (alle N Nachbarn).
 // dispatch(ceil(N/64)): 64 Threads pro Workgroup laufen parallel.
-// Kein CPU-Roundtrip: Simulationsergebnis bleibt im GPU-Speicher für den Render-Pass.
+//
+// Fairer WebGL-Vergleich (zwei Optimierungen):
+//   1. Pipeline-Override-Konstante N (constants:{N:n}) → Loop-Unrolling wie #define N
+//   2. Struct-of-Arrays (SoA): getrennte Puffer für Position und Geschwindigkeit.
+//      Der innere O(N²)-Loop liest nur Positionen (16 Bytes/Partikel statt 32),
+//      äquivalent zu WebGLs separater uPos-Textur.
 
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
 import { getWebGPU, resizeWebGPUCanvas, GpuTimer } from "../../../src/shared/webgpu";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import NBODY_COMPUTE from "../shaders/gpu/simulate.wgsl?raw";
 import NBODY_RENDER  from "../shaders/gpu/render.wgsl?raw";
 
@@ -25,20 +30,18 @@ const { device, context, format } = await getWebGPU(canvas);
 // --- Pipelines ---------------------------------------------------------------
 
 const computeBGL = device.createBindGroupLayout({ entries: [
-  { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
-  { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-  { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-  { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+  { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } }, // inBuf
+  { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },           // outBuf
+  { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },           // simU
 ]});
 const renderBGL = device.createBindGroupLayout({ entries: [
   { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
   { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
 ]});
 
-const computePipeline = device.createComputePipeline({
-  layout: device.createPipelineLayout({ bindGroupLayouts: [computeBGL] }),
-  compute: { module: device.createShaderModule({ code: NBODY_COMPUTE }), entryPoint: "main" },
-});
+// Shader-Modul einmalig erzeugen; Pipeline wird pro N-Wert spezialisiert (s. rebuild).
+const computeShaderModule = device.createShaderModule({ code: NBODY_COMPUTE });
+
 const renderPipeline = device.createRenderPipeline({
   layout: device.createPipelineLayout({ bindGroupLayouts: [renderBGL] }),
   vertex:   { module: device.createShaderModule({ code: NBODY_RENDER_VS }), entryPoint: "vs" },
@@ -48,11 +51,11 @@ const renderPipeline = device.createRenderPipeline({
 });
 
 // Uniforms
-const nBuf     = device.createBuffer({ size: 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const simUBuf  = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const renderUB = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }); // mat4 + n + pad
 
-// Particle buffers (ping-pong)
+// Particle-Puffer (Ping-Pong, AoS) — computePipeline wird per N in rebuild() erstellt.
+let computePipeline: GPUComputePipeline;
 let bufA: GPUBuffer, bufB: GPUBuffer;
 let computeBGA: GPUBindGroup, computeBGB: GPUBindGroup;
 let renderBGA: GPUBindGroup, renderBGB: GPUBindGroup;
@@ -66,7 +69,13 @@ function rebuild(n: number): void {
   bufA = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   bufB = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
 
-  // Init particles
+  // Pipeline pro N spezialisieren (Override-Konstante N → Compiler kennt Loop-Grenze).
+  computePipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [computeBGL] }),
+    compute: { module: computeShaderModule, entryPoint: "main", constants: { N: n } },
+  });
+
+  // Init: AoS — interleaved pos (xyz+mass) und vel (xyz+pad) pro Partikel.
   const data = new Float32Array(n * 8);
   for (let i = 0; i < n; i++) {
     const theta = Math.random()*Math.PI*2, phi = Math.random()*Math.PI;
@@ -81,14 +90,18 @@ function rebuild(n: number): void {
   device.queue.writeBuffer(bufA, 0, data);
   device.queue.writeBuffer(bufB, 0, data);
 
-  // Bind groups
+  // Bind groups (Ping-Pong)
+  // flip=0: liest bufA, schreibt bufB. Render liest bufB.
+  // flip=1: liest bufB, schreibt bufA. Render liest bufA.
   computeBGA = device.createBindGroup({ layout: computeBGL, entries: [
-    { binding: 0, resource: { buffer: bufA } }, { binding: 1, resource: { buffer: bufB } },
-    { binding: 2, resource: { buffer: nBuf } }, { binding: 3, resource: { buffer: simUBuf } },
+    { binding: 0, resource: { buffer: bufA } },
+    { binding: 1, resource: { buffer: bufB } },
+    { binding: 2, resource: { buffer: simUBuf } },
   ]});
   computeBGB = device.createBindGroup({ layout: computeBGL, entries: [
-    { binding: 0, resource: { buffer: bufB } }, { binding: 1, resource: { buffer: bufA } },
-    { binding: 2, resource: { buffer: nBuf } }, { binding: 3, resource: { buffer: simUBuf } },
+    { binding: 0, resource: { buffer: bufB } },
+    { binding: 1, resource: { buffer: bufA } },
+    { binding: 2, resource: { buffer: simUBuf } },
   ]});
   renderBGA = device.createBindGroup({ layout: renderBGL, entries: [
     { binding: 0, resource: { buffer: renderUB } }, { binding: 1, resource: { buffer: bufB } },
@@ -96,24 +109,21 @@ function rebuild(n: number): void {
   renderBGB = device.createBindGroup({ layout: renderBGL, entries: [
     { binding: 0, resource: { buffer: renderUB } }, { binding: 1, resource: { buffer: bufA } },
   ]});
-
-  const nData = new Uint32Array([n]);
-  device.queue.writeBuffer(nBuf, 0, nData);
 }
 
 // --- GUI ---------------------------------------------------------------------
 
-const params = { N: 512, dt: 0.002, softening: 0.1 };
+const params = { N: readBenchmarkValue() ?? 512, dt: 0.002, softening: 0.1 };
 rebuild(params.N);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer = new GpuTimer(device);
 const cpuTimer = new CpuTimer();
 
 const gui = new GUI({ title: "N-Body (WebGPU)" });
 let pendingCapture = false;
-gui.add(params, "N", [64, 128, 256, 512, 1024, 2048, 4096]).name("N Partikel").onChange((v: number) => rebuild(v));
+gui.add(params, "N", [256, 512, 1024, 2048, 4096, 8192, 16384]).name("N Partikel").onChange((v: number) => rebuild(v));
 gui.add(params, "dt", 0.0005, 0.01, 0.0001).name("Zeitschritt");
 gui.add(params, "softening", 0.01, 1.0, 0.01).name("Softening");
 gui.add({ run: async () => {
@@ -130,7 +140,7 @@ mat4.lookAt(view4, [0, 4, 12], [0, 0, 0], [0, 1, 0]);
 const renderUData = new Float32Array(20); // mat4(16) + n(1) + pad(3)
 
 let flip = 0;
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   if (resizeWebGPUCanvas(canvas)) {
     mat4.perspective(proj4, Math.PI/3.6, canvas.width/Math.max(1,canvas.height), 0.01, 200);
     mat4.multiply(viewProj, proj4, view4);
@@ -179,7 +189,9 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'nbody-webgpu.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
+  if (benchmark.isRunning) await device.queue.onSubmittedWorkDone(); // Drain (yield) → Timestamp-Readback fertig
+  const gpuMs = gpuTimer.takeSample() ?? undefined;
+  stats.update(); benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

@@ -11,7 +11,7 @@ import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
 import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffer, createGPUIndexBuffer, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer } from "../../../src/shared/webgpu";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -97,11 +97,11 @@ const proj = mat4.create(), view = mat4.create();
 const cameraPos = vec3.fromValues(0, 15, 35), lightPos = vec3.fromValues(10, 20, 20);
 mat4.lookAt(view, cameraPos, [0,0,0], [0,1,0]);
 
-const params = { n: 10000 };
+const params = { n: readBenchmarkValue() ?? 10000 };
 buildInstances(params.n);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
 const gpuTimer = new GpuTimer(device);
 const cpuTimer = new CpuTimer();
 let depth = createDepthTexture(device, 1, 1);
@@ -116,7 +116,7 @@ gui.add({ run: async () => {
 }}, "run").name("Benchmark starten");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   if (resizeWebGPUCanvas(canvas)) {
     depth.destroy(); depth = createDepthTexture(device, canvas.width, canvas.height);
     mat4.perspective(proj, Math.PI/3.6, canvas.width/Math.max(1,canvas.height), 0.1, 300);
@@ -154,7 +154,9 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'instancing-webgpu.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
+  if (benchmark.isRunning) await device.queue.onSubmittedWorkDone(); // Drain (yield) → Timestamp-Readback fertig
+  const gpuMs = gpuTimer.takeSample() ?? undefined;
+  stats.update(); benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

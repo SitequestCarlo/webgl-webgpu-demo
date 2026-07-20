@@ -106,15 +106,37 @@ CPU-Submit-Zeit), WebGPU wird über `getCurrentTexture()` durch die Swapchain
 gedrosselt (Present-Stall). Deshalb ist die Frame-Zeit **nicht** als Vergleichs-
 metrik geeignet.
 
-Stattdessen werden CPU- und GPU-Zeit **getrennt** gemessen:
+Stattdessen werden CPU- und GPU-Zeit **getrennt** gemessen. Während eines
+Benchmark-Laufs schaltet der Render-Loop in einen **serialisierten Modus** (pro
+Frame wird die GPU voll gedrained), damit die GPU-Messung zuverlässig ein Sample
+pro Frame liefert:
 
-- **GPU-Zeit:** `GpuTimer` (WebGPU) misst die reine Pass-Ausführungszeit per
-  `GPUQuerySet`, `GlTimer` (WebGL2) nutzt `EXT_disjoint_timer_query_webgl2`. Beide
-  lesen die Werte **asynchron** aus (ein Pool erlaubt mehrere gleichzeitige
-  Readbacks) und blockieren den CPU-Thread nicht mit `gl.finish()`.
-- **CPU-Zeit:** `CpuTimer` klammert nur Record+Submit ein. Die Swapchain-Textur
-  (`getCurrentTexture()`) wird **außerhalb** dieser Messung geholt, damit ein
-  Present-Stall nicht fälschlich als API-Overhead gezählt wird.
+```
+CPU-Phase:  record + submit  → cpuMs   (CpuTimer, performance.now)
+GPU-Phase:  GPU-Ausführungszeit → gpuMs
+  WebGPU: await queue.onSubmittedWorkDone()  → Wall-Clock-Wartezeit
+  WebGL : Fence (clientWaitSync) als Drain, GPU-Zeit aus EXT_disjoint_timer_query (ns)
+```
+
+- **Wichtig (WebGL):** `gl.finish()` ist in Chrome praktisch ein No-Op und
+  serialisiert **nicht** — deshalb ein echter Fence (`fenceSync` + `clientWaitSync`).
+  Und weil GPU-Arbeit in WebGL mit dem CPU-Issue **überlappt**, würde eine
+  Wall-Clock-Wartezeit ~0 ergeben; die echte GPU-Zeit kommt daher aus der
+  **Disjoint-Timer-Query** (GPU-Nanosekunden), die nach dem Fence garantiert
+  verfügbar ist.
+- **Deterministisch:** Jede Iteration liefert genau **ein** CPU- und ein GPU-Sample —
+  kein Pipeline-Lag und keine verlorenen Timestamp-Readbacks (das war der Grund,
+  warum die asynchronen Timer bei Showcases mit nur einem Draw-Call fast keine
+  GPU-Samples lieferten).
+- **Present ausgeschlossen:** Durch das Drainen pro Frame findet der Swapchain-Present
+  *zwischen* den Frames statt — außerhalb beider Messphasen.
+- **Methodik-Hinweis:** WebGPU misst GPU-Wall-Clock (Exec + etwas Scheduling-Latenz),
+  WebGL misst reine GPU-Exec (Timestamps). Für GPU-lastige Workloads sind beide
+  vergleichbar; bei sehr kleiner GPU-Last kann WebGPU durch die Latenz-Untergrenze
+  leicht höher wirken.
+
+Außerhalb des Benchmarks (freies Rendern) bleibt der Loop unverändert; dort speisen
+die asynchronen `GpuTimer`/`GlTimer` weiterhin die Live-Anzeige im GUI-Panel.
 
 So zeigt z. B. Showcase 05, dass die vielen Draw-Calls **CPU-bound** sind
 (`cpuMedMs` ≫ `gpuMedMs`), während Showcase 08 (N-Body) **GPU-bound** ist
