@@ -19,6 +19,7 @@ export interface BenchmarkResult {
   durationMs: number;
   avgFps: number;
   avgMs: number;
+  medMs: number;
   minMs: number;
   maxMs: number;
   p95Ms: number;
@@ -85,11 +86,16 @@ export class BenchmarkRun {
     const sum = sorted.reduce((s, v) => s + v, 0);
     const avgMs = sum / sorted.length;
     const p95Index = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+    const mid = Math.floor(sorted.length / 2);
+    const medMs = sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
     const result: BenchmarkResult = {
       frames: sorted.length,
       durationMs: now - this.startTime,
       avgFps: 1000 / avgMs,
       avgMs,
+      medMs,
       minMs: sorted[0],
       maxMs: sorted[sorted.length - 1],
       p95Ms: sorted[p95Index],
@@ -104,6 +110,7 @@ export function formatResult(r: BenchmarkResult): string {
     `Frames:  ${r.frames}`,
     `Avg FPS: ${r.avgFps.toFixed(1)}`,
     `Avg:     ${r.avgMs.toFixed(3)} ms`,
+    `Median:  ${r.medMs.toFixed(3)} ms`,
     `p95:     ${r.p95Ms.toFixed(3)} ms`,
     `Min:     ${r.minMs.toFixed(3)} ms`,
     `Max:     ${r.maxMs.toFixed(3)} ms`,

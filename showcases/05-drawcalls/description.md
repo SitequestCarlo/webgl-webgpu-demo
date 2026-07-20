@@ -49,3 +49,16 @@ device.queue.submit([cmd.finish()]);  // Einmaliger GPU-Submit
 
 WebGPU ist bei vielen Draw-Calls deutlich effizienter, weil die Command-Buffer-Validierung
 erst beim `submit()` stattfindet, nicht pro Draw-Call.
+
+## Messung
+
+Die Messung erfolgt manuell über den GUI-Button **„Benchmark starten"** für den
+aktuell eingestellten Parameter (Warmup + feste Anzahl Mess-Frames). Das Ergebnis
+erscheint als Overlay; ausgewertet werden u.a. Median und p95 der Frametimes.
+
+### Reproduzierbarkeit
+
+Die `requestAnimationFrame`-Frametime ist nur unter **deaktiviertem VSync und
+aufgehobenem Frame-Limit** aussagekräftig, sonst werden Zeiten unter 8,33 ms
+(120 Hz) auf die Bildwiederholrate geklemmt. Getestet mit Chrome unter
+`--disable-frame-rate-limit --disable-gpu-vsync`.

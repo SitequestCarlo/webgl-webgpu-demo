@@ -118,35 +118,6 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] N=${params.n} Draw-Calls\n${formatResult(r)}\nCPU avg: ${cpuTimer.average.toFixed(2)} ms`;
 } }, "run").name("Benchmark starten");
-
-let sweepBenchmark: BenchmarkRun | null = null;
-const N_SWEEP = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000];
-gui.add({ sweep: async () => {
-  resultsEl.style.display = "block";
-  const rows = ["N;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
-  sweepBenchmark = new BenchmarkRun(15, 60);
-  for (const n of N_SWEEP) {
-    params.n = n;
-    rebuildObjects(Math.round(n));
-    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
-    for (let run = 0; run < 5; run++) {
-      resultsEl.textContent = `Sweep: N=${n.toLocaleString("de-DE")} ... (Lauf ${run + 1}/5)`;
-      const r = await sweepBenchmark.start();
-      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
-    }
-    const avgMs = sumMs / 5;
-    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
-    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
-  }
-  sweepBenchmark = null;
-  resultsEl.textContent = "Sweep abgeschlossen.";
-  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "drawcalls-webgpu.csv";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 setInterval(() => { (cpuCtrl as { setValue:(v:string)=>void }).setValue(`${cpuTimer.average.toFixed(2)} ms`); }, 300);
@@ -218,7 +189,6 @@ function render(now: number): void {
 
   stats.update();
   benchmark.sample(now);
-  sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

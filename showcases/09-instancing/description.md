@@ -48,10 +48,15 @@ pass.drawIndexed(indexCount, N);  // N = Anzahl Instanzen
 Der Storage Buffer kann auch von **Compute-Shadern** beschrieben werden.
 Das ermöglicht GPU-seitige Partikel-Simulation ohne CPU-Roundtrip:
 
-```
-GPU-Compute → instances[] → GPU-Render
-(kein CPU-Roundtrip nötig!)
-```
+## Messung
 
-In WebGL müsste man die Positions-Daten per Frame vom GPU zurück zur CPU und
-wieder zum GPU übertragen (oder Ping-Pong mit Transform Feedback).
+Die Messung erfolgt manuell über den GUI-Button **„Benchmark starten"** für den
+aktuell eingestellten Parameter (Warmup + feste Anzahl Mess-Frames). Das Ergebnis
+erscheint als Overlay; ausgewertet werden u.a. Median und p95 der Frametimes.
+
+### Reproduzierbarkeit
+
+Die `requestAnimationFrame`-Frametime ist nur unter **deaktiviertem VSync und
+aufgehobenem Frame-Limit** aussagekräftig, sonst werden Zeiten unter 8,33 ms
+(120 Hz) auf die Bildwiederholrate geklemmt. Getestet mit Chrome unter
+`--disable-frame-rate-limit --disable-gpu-vsync`.
