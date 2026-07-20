@@ -15,9 +15,48 @@ export function createStatsPanel(container: HTMLElement = document.body): Stats 
 }
 
 export interface BenchmarkResult {
+  /**
+   * Worauf sich avg/med/min/max/p95 beziehen:
+   *  - "cpu"   = CPU-Zeit für Record+Submit (API-/Treiber-Overhead) → CPU-bound Showcases
+   *  - "gpu"   = echte GPU-Ausführungszeit (Timestamp-Query)        → GPU-bound Showcases
+   *  - "frame" = Wall-Clock-Frame-Zeit (Fallback)
+   */
+  metric: "cpu" | "gpu" | "frame";
   frames: number;
   durationMs: number;
   avgFps: number;
+  // Primärmetrik (je nach Showcase CPU- oder GPU-Zeit; Fallback Frame-Zeit):
+  avgMs: number;
+  medMs: number;
+  minMs: number;
+  maxMs: number;
+  p95Ms: number;
+  // Alle drei Dimensionen immer mitgeführt (undefined, falls nicht gemessen).
+  // Erst dadurch wird sichtbar, OB ein Showcase CPU- oder GPU-bound ist.
+  cpu?: SampleStats;
+  gpu?: SampleStats;
+  frame: SampleStats;
+}
+
+export interface BenchmarkOptions {
+  /** Aufwärmphase in Millisekunden (Wall-Clock), bevor Messwerte gesammelt werden. */
+  warmupMs?: number;
+  /** Mindestdauer des Messfensters in Millisekunden (Wall-Clock). */
+  measureMs?: number;
+  /** Mindestanzahl gesammelter Frames, bevor die Messung enden darf. */
+  minFrames?: number;
+  /** Mindestanzahl CPU-/GPU-Samples, damit die Dimension als Primärmetrik taugt. */
+  minSamples?: number;
+  /**
+   * Messziel dieses Showcases: "cpu" für API-Overhead-lastige Showcases
+   * (viele Draw-Calls / Uniform-Uploads), "gpu" für rechenlastige Showcases
+   * (Vertex-/Fragment-/Compute-Durchsatz). Default: "gpu" falls GPU-Samples
+   * vorliegen, sonst "frame".
+   */
+  primary?: "cpu" | "gpu";
+}
+
+export interface SampleStats {
   avgMs: number;
   medMs: number;
   minMs: number;
@@ -25,21 +64,53 @@ export interface BenchmarkResult {
   p95Ms: number;
 }
 
-// Sammelt Frame-Zeiten über eine feste Anzahl Frames, nachdem eine
-// Warmup-Phase verstrichen ist. Aufruf von sample() pro Frame.
+function computeStats(samples: number[]): SampleStats {
+  const sorted = [...samples].sort((a, b) => a - b);
+  const n = sorted.length;
+  const sum = sorted.reduce((s, v) => s + v, 0);
+  const mid = Math.floor(n / 2);
+  const p95Index = Math.min(n - 1, Math.floor(n * 0.95));
+  return {
+    avgMs: sum / n,
+    medMs: n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid],
+    minMs: sorted[0],
+    maxMs: sorted[n - 1],
+    p95Ms: sorted[p95Index],
+  };
+}
+
+// Sammelt drei getrennte Zeit-Dimensionen pro Frame über ein ZEITBASIERTES
+// Messfenster nach einer zeitbasierten Aufwärmphase:
+//   - CPU-Zeit  (Record+Submit): erfasst den API-/Treiber-Overhead. Das ist der
+//     eigentliche WebGL-vs-WebGPU-Unterschied bei vielen Draw-Calls/Uniform-Uploads
+//     und wird von GPU-Timestamps NICHT erfasst.
+//   - GPU-Zeit  (Timestamp-Query): reine Ausführungszeit auf der GPU.
+//   - Frame-Zeit (rAF-Delta): End-to-End inkl. VSync/Present — zwischen den APIs
+//     NICHT vergleichbar, nur als Kontext.
+// Welche Dimension die Primärmetrik ist, legt das jeweilige Showcase über
+// options.primary fest (CPU-bound vs. GPU-bound).
 export class BenchmarkRun {
-  private warmupFrames: number;
-  private measureFrames: number;
-  private warmupDone = 0;
-  private samples: number[] = [];
+  private warmupMs: number;
+  private measureMs: number;
+  private minFrames: number;
+  private minSamples: number;
+  private primaryPref?: "cpu" | "gpu";
+
+  private frameSamples: number[] = [];
+  private gpuSamples: number[] = [];
+  private cpuSamples: number[] = [];
   private lastTime = 0;
-  private startTime = 0;
+  private phaseStart = 0;     // Startzeit der aktuellen Phase (Warmup bzw. Messung)
+  private measuring = false;  // false = Warmup, true = Messfenster
   private running = false;
   private resolveFn: ((r: BenchmarkResult) => void) | null = null;
 
-  constructor(warmupFrames = 60, measureFrames = 300) {
-    this.warmupFrames = warmupFrames;
-    this.measureFrames = measureFrames;
+  constructor(opts: BenchmarkOptions = {}) {
+    this.warmupMs = opts.warmupMs ?? 800;
+    this.measureMs = opts.measureMs ?? 3000;
+    this.minFrames = opts.minFrames ?? 60;
+    this.minSamples = opts.minSamples ?? 10;
+    this.primaryPref = opts.primary;
   }
 
   get isRunning(): boolean {
@@ -47,10 +118,12 @@ export class BenchmarkRun {
   }
 
   start(): Promise<BenchmarkResult> {
-    this.warmupDone = 0;
-    this.samples = [];
+    this.frameSamples = [];
+    this.gpuSamples = [];
+    this.cpuSamples = [];
     this.lastTime = 0;
-    this.startTime = 0;
+    this.phaseStart = 0;
+    this.measuring = false;
     this.running = true;
     return new Promise((resolve) => {
       this.resolveFn = resolve;
@@ -58,47 +131,77 @@ export class BenchmarkRun {
   }
 
   // Muss einmal pro gerendertem Frame aufgerufen werden.
-  sample(now: number): void {
+  //   gpuMs: GPU-Ausführungszeit dieses Frames aus Timestamp-Queries (falls verfügbar).
+  //   cpuMs: CPU-Zeit für Record+Submit dieses Frames (falls gemessen).
+  sample(now: number, gpuMs?: number, cpuMs?: number): void {
     if (!this.running) return;
 
     if (this.lastTime === 0) {
       this.lastTime = now;
+      this.phaseStart = now;
       return;
     }
     const dt = now - this.lastTime;
     this.lastTime = now;
 
-    if (this.warmupDone < this.warmupFrames) {
-      this.warmupDone++;
-      if (this.warmupDone === this.warmupFrames) this.startTime = now;
+    if (!this.measuring) {
+      // Zeitbasierte Aufwärmphase: gleicht GPU-DVFS/Boost-Clocks für beide APIs
+      // gleich lang aus (nicht frame-basiert, da Framezeiten stark differieren).
+      if (now - this.phaseStart >= this.warmupMs) {
+        this.measuring = true;
+        this.phaseStart = now;
+      }
       return;
     }
 
-    this.samples.push(dt);
-    if (this.samples.length >= this.measureFrames) {
+    this.frameSamples.push(dt);
+    if (gpuMs !== undefined && Number.isFinite(gpuMs) && gpuMs >= 0) {
+      this.gpuSamples.push(gpuMs);
+    }
+    if (cpuMs !== undefined && Number.isFinite(cpuMs) && cpuMs >= 0) {
+      this.cpuSamples.push(cpuMs);
+    }
+
+    const elapsed = now - this.phaseStart;
+    if (elapsed >= this.measureMs && this.frameSamples.length >= this.minFrames) {
       this.finish(now);
     }
   }
 
   private finish(now: number): void {
     this.running = false;
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const sum = sorted.reduce((s, v) => s + v, 0);
-    const avgMs = sum / sorted.length;
-    const p95Index = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
-    const mid = Math.floor(sorted.length / 2);
-    const medMs = sorted.length % 2 === 0
-      ? (sorted[mid - 1] + sorted[mid]) / 2
-      : sorted[mid];
+    const frame = computeStats(this.frameSamples);
+    const gpu = this.gpuSamples.length >= this.minSamples ? computeStats(this.gpuSamples) : undefined;
+    const cpu = this.cpuSamples.length >= this.minSamples ? computeStats(this.cpuSamples) : undefined;
+
+    // Primärmetrik nach Showcase-Wunsch, mit Fallback-Kette.
+    let metric: "cpu" | "gpu" | "frame";
+    let primary: SampleStats;
+    if (this.primaryPref === "cpu" && cpu) {
+      metric = "cpu"; primary = cpu;
+    } else if (this.primaryPref === "gpu" && gpu) {
+      metric = "gpu"; primary = gpu;
+    } else if (gpu) {
+      metric = "gpu"; primary = gpu;
+    } else if (cpu) {
+      metric = "cpu"; primary = cpu;
+    } else {
+      metric = "frame"; primary = frame;
+    }
+
     const result: BenchmarkResult = {
-      frames: sorted.length,
-      durationMs: now - this.startTime,
-      avgFps: 1000 / avgMs,
-      avgMs,
-      medMs,
-      minMs: sorted[0],
-      maxMs: sorted[sorted.length - 1],
-      p95Ms: sorted[p95Index],
+      metric,
+      frames: this.frameSamples.length,
+      durationMs: now - this.phaseStart,
+      avgFps: 1000 / frame.avgMs,
+      avgMs: primary.avgMs,
+      medMs: primary.medMs,
+      minMs: primary.minMs,
+      maxMs: primary.maxMs,
+      p95Ms: primary.p95Ms,
+      cpu,
+      gpu,
+      frame,
     };
     this.resolveFn?.(result);
     this.resolveFn = null;
@@ -108,8 +211,17 @@ export class BenchmarkRun {
   }
 }
 
+const METRIC_LABEL: Record<BenchmarkResult["metric"], string> = {
+  cpu: "CPU-Zeit Record+Submit (API-Overhead)",
+  gpu: "GPU-Zeit (Timestamp-Query)",
+  frame: "Frame-Zeit (Wall-Clock)",
+};
+
 export function formatResult(r: BenchmarkResult): string {
+  const line = (label: string, s?: SampleStats) =>
+    s ? `${label} avg ${s.avgMs.toFixed(3)} · med ${s.medMs.toFixed(3)} · p95 ${s.p95Ms.toFixed(3)} ms` : "";
   return [
+    `Metrik:  ${METRIC_LABEL[r.metric]}`,
     `Frames:  ${r.frames}`,
     `Avg FPS: ${r.avgFps.toFixed(1)}`,
     `Avg:     ${r.avgMs.toFixed(3)} ms`,
@@ -117,24 +229,32 @@ export function formatResult(r: BenchmarkResult): string {
     `p95:     ${r.p95Ms.toFixed(3)} ms`,
     `Min:     ${r.minMs.toFixed(3)} ms`,
     `Max:     ${r.maxMs.toFixed(3)} ms`,
-  ].join("\n");
+    "—",
+    line("CPU:  ", r.cpu),
+    line("GPU:  ", r.gpu),
+    line("Frame:", r.frame),
+  ].filter(Boolean).join("\n");
 }
 
 // Misst die reine CPU-Zeit (Draw-Loop ohne V-Sync-Wartezeit).
 // Aufruf: begin() vor dem Draw-Loop, end() danach.
-// average gibt den gleitenden Durchschnitt der letzten 60 Messungen zurück.
+// average gibt den gleitenden Durchschnitt der letzten 60 Messungen zurück,
+// lastMs die zuletzt gemessene Einzelzeit (für benchmark.sample).
 export class CpuTimer {
   private t0 = 0;
+  private lastDt = 0;
   private buf: number[] = [];
   begin(): void { this.t0 = performance.now(); }
   end(): void {
     const dt = performance.now() - this.t0;
+    this.lastDt = dt;
     this.buf.push(dt);
     if (this.buf.length > 60) this.buf.shift();
   }
+  get lastMs(): number { return this.lastDt; }
   get average(): number {
     if (this.buf.length === 0) return 0;
     return this.buf.reduce((a, b) => a + b, 0) / this.buf.length;
   }
-  reset(): void { this.buf = []; }
+  reset(): void { this.buf = []; this.lastDt = 0; }
 }

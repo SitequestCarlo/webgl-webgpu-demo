@@ -9,8 +9,8 @@
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
-import { getWebGPU, resizeWebGPUCanvas } from "../../../src/shared/webgpu";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { getWebGPU, resizeWebGPUCanvas, GpuTimer } from "../../../src/shared/webgpu";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 import NBODY_COMPUTE from "../shaders/gpu/simulate.wgsl?raw";
 import NBODY_RENDER  from "../shaders/gpu/render.wgsl?raw";
 
@@ -107,7 +107,9 @@ const params = { N: 512, dt: 0.002, softening: 0.1 };
 rebuild(params.N);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun(10, 100);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer = new GpuTimer(device);
+const cpuTimer = new CpuTimer();
 
 const gui = new GUI({ title: "N-Body (WebGPU)" });
 let pendingCapture = false;
@@ -139,11 +141,15 @@ function render(now: number): void {
   new Uint32Array(renderUData.buffer)[16] = currentN;
   device.queue.writeBuffer(renderUB, 0, renderUData);
 
+  // Swapchain-Textur vor der CPU-Messung holen (Present-Stall zählt nicht als API-Overhead).
+  const colorView = context.getCurrentTexture().createView();
+  cpuTimer.begin();
+
   // --- Compute-Pass: Simulation ---
   // Jede Workgroup berechnet 64 Partikel parallel.
   // Ping-Pong: bufA → lesen, bufB → schreiben (flip nach jedem Frame).
   const cmd = device.createCommandEncoder();
-  const cp  = cmd.beginComputePass();
+  const cp  = cmd.beginComputePass({ timestampWrites: gpuTimer.writesBegin });
   cp.setPipeline(computePipeline);
   cp.setBindGroup(0, flip === 0 ? computeBGA : computeBGB);
   cp.dispatchWorkgroups(Math.ceil(currentN / 64));
@@ -152,13 +158,16 @@ function render(now: number): void {
   // --- Render-Pass: Partikel als Punkte visualisieren ---
   // Vertex-Shader liest direkt aus dem Storage Buffer des gerade beschriebenen Pings.
   const rp = cmd.beginRenderPass({ colorAttachments: [{
-    view: context.getCurrentTexture().createView(), clearValue: {r:0,g:0,b:0,a:1}, loadOp: "clear", storeOp: "store",
-  }]});
+    view: colorView, clearValue: {r:0,g:0,b:0,a:1}, loadOp: "clear", storeOp: "store",
+  }], timestampWrites: gpuTimer.writesEnd });
   rp.setPipeline(renderPipeline);
   rp.setBindGroup(0, flip === 0 ? renderBGA : renderBGB);
   rp.draw(currentN);
   rp.end();
+  gpuTimer.resolve(cmd);
   device.queue.submit([cmd.finish()]);
+  gpuTimer.afterSubmit();
+  cpuTimer.end();
   flip = 1 - flip; // Ping-Pong umschalten
 
   // Screenshot-Trigger (einmalig nach Button-Klick)
@@ -170,7 +179,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'nbody-webgpu.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now);
+  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

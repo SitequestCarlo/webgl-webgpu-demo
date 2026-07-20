@@ -127,7 +127,7 @@ function updateProjection(): void {
 // --- Benchmark -----------------------------------------------------------
 
 const stats = createStatsPanel(document.getElementById("app")!);
-const benchmark = new BenchmarkRun(60, 300);
+const benchmark = new BenchmarkRun();
 
 async function runBenchmark(): Promise<void> {
   resultsEl.style.display = "block";

@@ -52,48 +52,82 @@ WebGPU-exklusive Compute-Shader-Demos ohne WebGL-Entsprechung.
 
 ### Messprinzip
 
-Alle Performance-Showcases nutzen denselben `BenchmarkRun`-Mechanismus:
-`requestAnimationFrame`-Callbacks werden über eine feste Anzahl Frames gesammelt
-(nach einer Warmup-Phase) und zu einem Ergebnis aggregiert. Gemessen wird die
-**Frame-Zeit** (Wall-Clock-Delta zwischen Callbacks), nicht eine isolierte GPU-Zeit.
+Alle Performance-Showcases erfassen pro Frame **drei getrennte Zeit-Dimensionen**,
+weil WebGL vs. WebGPU zwei verschiedene Geschichten hat — GPU-Durchsatz **und**
+CPU-/API-Overhead:
+
+1. **CPU-Zeit (Record+Submit)** — die Zeit, um die Frame-Kommandos zu erzeugen und
+   abzuschicken (`performance.now()` um Uniform-Uploads + Command-Recording +
+   Submit). Das erfasst Treiber-Validierung und JS→Native-Übergänge, also den
+   **API-Overhead** — genau den Unterschied bei vielen Draw-Calls/Uniform-Uploads.
+   GPU-Timestamps erfassen diesen Anteil **nicht**.
+2. **GPU-Zeit (Timestamp-Query)** — die reine Ausführungszeit auf der GPU
+   (WebGPU `timestamp-query`, WebGL2 `EXT_disjoint_timer_query_webgl2`),
+   unabhängig von VSync/Compositor/Swapchain.
+3. **Frame-Zeit (rAF-Delta)** — End-to-End inkl. Present; zwischen den APIs **nicht**
+   vergleichbar, nur als Kontext.
+
+Jedes Showcase legt über `primary` fest, welche Dimension die Headline-Metrik ist:
+CPU-bound Showcases (05 Draw-Calls) → `cpu`, GPU-bound Showcases (06 Vertex,
+08 N-Body, 09 Instancing) → `gpu`. Alle drei Werte stehen aber immer in der CSV,
+sodass sich belegen lässt, *ob* ein Showcase CPU- oder GPU-bound ist.
+
+Warmup und Messfenster sind **zeitbasiert** (nicht frame-basiert), damit beide
+APIs trotz stark unterschiedlicher Frame-Zeiten gleich lange aufwärmen
+(GPU-DVFS/Boost-Clocks) und gleich lange gemessen werden.
 
 ```typescript
-benchmark.sample(now);   // in jedem Render-Frame aufgerufen
-await benchmark.start(); // liefert Statistiken nach measureFrames Frames
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60, primary: "cpu" });
+const gpuTimer  = new GpuTimer(device);       // bzw. new GlTimer(gl)
+const cpuTimer  = new CpuTimer();
+// ... pro Frame:
+benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
+await benchmark.start(); // liefert Statistiken nach dem Messfenster
 ```
 
 ### Ausgegebene Metriken
 
 | Metrik | Bedeutung |
 |---|---|
-| `Avg` | Arithmetischer Mittelwert aller Frametimes |
+| `metric` | Primärmetrik dieses Showcases: `cpu`, `gpu` oder `frame` (Fallback) |
+| `Avg` | Arithmetischer Mittelwert der Primärmetrik |
 | `Median` | Robuster Mittelwert (unempfindlich gegen Browser-Hitches) |
 | `p95` | 95. Perzentil – wie schlecht können 5 % der Frames sein? |
 | `Min / Max` | Extremwerte des Messfensters |
+| `cpuMedMs` | Median der CPU-Zeit Record+Submit (API-Overhead) |
+| `gpuMedMs` | Median der GPU-Ausführungszeit (Timestamp-Query) |
+| `frameMedMs` | Median der Wall-Clock-Frame-Zeit (Kontext) |
 
 ### WebGL vs. WebGPU: Timing-Semantik
 
-**WebGL** ruft in Showcase **06** (Vertex Throughput) `gl.finish()` **vor**
-`benchmark.sample()` auf, weil dort der GPU-Durchsatz das Messziel ist — ohne
-Synchronisation würde nur die Submission-Zeit (~0,1 ms konstant) gemessen, nicht
-die echte Renderarbeit. Showcase **05** (Draw-Call Overhead) verzichtet dagegen
-bewusst auf `gl.finish()`, weil dort die CPU-seitige API-Overhead-Zeit das Messziel ist.
+Der entscheidende Punkt für einen fairen Vergleich: **Frame-Zeit (rAF-Delta) misst
+bei beiden APIs unterschiedliche Dinge** — WebGL läuft „fire-and-forget" (nur
+CPU-Submit-Zeit), WebGPU wird über `getCurrentTexture()` durch die Swapchain
+gedrosselt (Present-Stall). Deshalb ist die Frame-Zeit **nicht** als Vergleichs-
+metrik geeignet.
 
-**WebGPU** hat keinen äquivalenten synchronen Block im Render-Loop. Die gemessene
-Frame-Zeit enthält GPU-Arbeit + Swapchain-Backpressure + Compositor-Latenz. Der
-Live-Timer im GUI-Panel nutzt asynchrone `timestamp-query`-Abfragen für präzisere
-GPU-Werte, diese fließen aber nicht in den `BenchmarkRun` ein.
+Stattdessen werden CPU- und GPU-Zeit **getrennt** gemessen:
+
+- **GPU-Zeit:** `GpuTimer` (WebGPU) misst die reine Pass-Ausführungszeit per
+  `GPUQuerySet`, `GlTimer` (WebGL2) nutzt `EXT_disjoint_timer_query_webgl2`. Beide
+  lesen die Werte **asynchron** aus (ein Pool erlaubt mehrere gleichzeitige
+  Readbacks) und blockieren den CPU-Thread nicht mit `gl.finish()`.
+- **CPU-Zeit:** `CpuTimer` klammert nur Record+Submit ein. Die Swapchain-Textur
+  (`getCurrentTexture()`) wird **außerhalb** dieser Messung geholt, damit ein
+  Present-Stall nicht fälschlich als API-Overhead gezählt wird.
+
+So zeigt z. B. Showcase 05, dass die vielen Draw-Calls **CPU-bound** sind
+(`cpuMedMs` ≫ `gpuMedMs`), während Showcase 08 (N-Body) **GPU-bound** ist
+(`gpuMedMs` ≫ `cpuMedMs`).
 
 ### Reproduzierbarkeit
 
-Die Messung basiert auf `requestAnimationFrame`. Damit Frametimes unter **8,33 ms
-(120 Hz)** überhaupt messbar sind, muss VSync deaktiviert und das Frame-Limit
-aufgehoben sein:
+VSync sollte deaktiviert und das Frame-Limit aufgehoben sein, damit der Render-Loop
+frei läuft und genügend GPU-Timestamp-Samples pro Sekunde entstehen:
 
 ```
 chrome --disable-frame-rate-limit --disable-gpu-vsync
 ```
 
-Ohne diese Flags werden schnelle Frames auf die Bildwiederholrate der GPU geklemmt
-und alle Messungen sind nur innerhalb eines Bildschirm-Intervalls (8,33/16,67 ms)
-unterscheidbar.
+Ohne diese Flags wird der Loop auf die Bildwiederholrate geklemmt; die
+GPU-Zeit-Messung bleibt gültig, liefert aber weniger Samples pro Sekunde.

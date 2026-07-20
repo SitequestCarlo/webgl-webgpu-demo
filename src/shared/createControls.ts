@@ -44,7 +44,7 @@ export function createControls(
   const resultsEl = document.getElementById('results') as HTMLDivElement;
   const appEl     = document.getElementById('app') ?? document.body;
   const stats     = createStatsPanel(appEl);
-  const benchmark = new BenchmarkRun(60, 300);
+  const benchmark = new BenchmarkRun();
   let   pendingCapture = false;
 
   // Ziel-Canvas: übergebene Instanz oder erster Canvas im DOM

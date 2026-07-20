@@ -142,7 +142,7 @@ function orbitVectors(): { pos: vec3; fwd: vec3; right: vec3; up: vec3 } {
 const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // ms/Frame ist für Path Tracer aussagekräftiger
 
-const benchmark = new BenchmarkRun(60, 300);
+const benchmark = new BenchmarkRun();
 
 // Screenshot: HDR-Akkumulations-Buffer per GPU-Readback lesen und auf der CPU tone-mappen.
 // (Ein direkter canvas.toBlob-Readback liefert bei WebGPU nach Frame-Ende ein leeres Bild.)

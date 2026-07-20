@@ -9,9 +9,9 @@
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
-import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffer, createGPUIndexBuffer, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor } from "../../../src/shared/webgpu";
+import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffer, createGPUIndexBuffer, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer } from "../../../src/shared/webgpu";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -101,7 +101,9 @@ const params = { n: 10000 };
 buildInstances(params.n);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer = new GpuTimer(device);
+const cpuTimer = new CpuTimer();
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Instancing (WebGPU)" });
@@ -122,16 +124,26 @@ function render(now: number): void {
   uniformData.set(view,0); uniformData.set(proj,16);
   uniformData[32]=lightPos[0]; uniformData[33]=lightPos[1]; uniformData[34]=lightPos[2]; uniformData[35]=0;
   uniformData[36]=cameraPos[0]; uniformData[37]=cameraPos[1]; uniformData[38]=cameraPos[2]; uniformData[39]=0;
+
+  // Swapchain-Textur vor der CPU-Messung holen (Present-Stall zählt nicht als API-Overhead).
+  const colorView = context.getCurrentTexture().createView();
+  cpuTimer.begin();
   device.queue.writeBuffer(uniformBuf, 0, uniformData);
 
   const cmd  = device.createCommandEncoder();
-  const pass = cmd.beginRenderPass(makeRenderPassDescriptor(context.getCurrentTexture().createView(), depth.createView(), {r:.06,g:.07,b:.09,a:1}));
+  const pass = cmd.beginRenderPass({
+    ...makeRenderPassDescriptor(colorView, depth.createView(), {r:.06,g:.07,b:.09,a:1}),
+    timestampWrites: gpuTimer.writesBoth,
+  });
   pass.setPipeline(pipeline); pass.setBindGroup(0, bg);
   pass.setVertexBuffer(0, vb); pass.setIndexBuffer(ib, "uint32");
   // Ein einziger Draw-Call: N Instanzen — @builtin(instance_index) gibt den Index.
   pass.drawIndexed(geo.indexCount, Math.round(params.n));
   pass.end();
+  gpuTimer.resolve(cmd);
   device.queue.submit([cmd.finish()]);
+  gpuTimer.afterSubmit();
+  cpuTimer.end();
 
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
@@ -142,7 +154,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'instancing-webgpu.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now);
+  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

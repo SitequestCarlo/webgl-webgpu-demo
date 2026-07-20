@@ -9,10 +9,10 @@ import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import {
-  getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize,
+  getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize, GlTimer,
 } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
 
@@ -120,7 +120,9 @@ let lights   = buildLights(params.numLights);
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // ms/Frame statt FPS anzeigen
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer  = new GlTimer(gl);
+const cpuTimer  = new CpuTimer();
 
 const gui = new GUI({ title: "Multi-Light (WebGL)" });
 let pendingCapture = false;
@@ -162,6 +164,10 @@ function render(now: number): void {
   mat3.normalFromMat4(normalMat, model);
 
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // CPU-Messung: Szene- + N×2 Licht-Uniforms hochladen und Draw absetzen.
+  // Jeder gl.uniform*-Aufruf ist ein JS→Native-Übergang — der API-Overhead wächst
+  // linear mit N (Gegenstück zu WebGPUs einzelnem writeBuffer).
+  cpuTimer.begin();
   gl.useProgram(program);
 
   // Szene-Uniforms (Matrizen, Kamera, Material)
@@ -186,8 +192,11 @@ function render(now: number): void {
 
   // Kugel zeichnen
   gl.bindVertexArray(vao);
+  gpuTimer.begin();
   gl.drawElements(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_INT, 0);
+  gpuTimer.end();
   gl.bindVertexArray(null);
+  cpuTimer.end();
 
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
@@ -200,7 +209,7 @@ function render(now: number): void {
   }
 
   stats.update();
-  benchmark.sample(now);
+  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

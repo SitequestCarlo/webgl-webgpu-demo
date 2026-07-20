@@ -11,10 +11,10 @@ import { mat3, mat4, vec3 } from "gl-matrix";
 import {
   getWebGPU, resizeWebGPUCanvas, createDepthTexture,
   createGPUVertexBuffer, createGPUIndexBuffer,
-  mat3ToMat4Array, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor,
+  mat3ToMat4Array, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer,
 } from "../../../src/shared/webgpu";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 import ML_WGSL from "../shaders/gpu/multi-light.wgsl?raw";
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,9 @@ const params = { numLights: 16, autoRotate: true };
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer  = new GpuTimer(device);
+const cpuTimer  = new CpuTimer();
 
 const gui = new GUI({ title: "Multi-Light (WebGPU)" });
 let pendingCapture = false;
@@ -157,6 +159,12 @@ function render(now: number): void {
 
   const n = Math.round(params.numLights);
 
+  // Swapchain-Textur vor der CPU-Messung holen (Present-Stall zählt nicht als API-Overhead).
+  const colorView = context.getCurrentTexture().createView();
+
+  // CPU-Messung: alle N Lichter mit EINEM writeBuffer hochladen + Record+Submit.
+  // Gegenstück ist WebGLs N × gl.uniform3f — hier sichtbar als CPU-Overhead-Vergleich.
+  cpuTimer.begin();
   // Licht-Storage-Buffer befüllen: 1 writeBuffer-Aufruf für alle N Lichter —
   // konstanter JS-Overhead, unabhängig von N (vs. WebGL: N separate gl.uniform3f-Calls).
   for (let i = 0; i < n; i++) {
@@ -181,17 +189,23 @@ function render(now: number): void {
 
   // Command-Encoder: Render-Pass aufzeichnen und als Batch einreichen
   const cmd  = device.createCommandEncoder();
-  const pass = cmd.beginRenderPass(makeRenderPassDescriptor(
-    context.getCurrentTexture().createView(), depth.createView(),
-    { r: 0.02, g: 0.02, b: 0.04, a: 1 },
-  ));
+  const pass = cmd.beginRenderPass({
+    ...makeRenderPassDescriptor(
+      colorView, depth.createView(),
+      { r: 0.02, g: 0.02, b: 0.04, a: 1 },
+    ),
+    timestampWrites: gpuTimer.writesBoth,
+  });
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bg);
   pass.setVertexBuffer(0, vb);
   pass.setIndexBuffer(ib, "uint32");
   pass.drawIndexed(geo.indexCount);
   pass.end();
+  gpuTimer.resolve(cmd);
   device.queue.submit([cmd.finish()]);
+  gpuTimer.afterSubmit();
+  cpuTimer.end();
 
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
@@ -204,7 +218,7 @@ function render(now: number): void {
   }
 
   stats.update();
-  benchmark.sample(now);
+  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

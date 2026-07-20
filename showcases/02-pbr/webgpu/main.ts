@@ -165,7 +165,7 @@ function updateLight(): void {
 updateLight();
 
 const stats     = createStatsPanel(document.getElementById("app")!);
-const benchmark = new BenchmarkRun(60, 300);
+const benchmark = new BenchmarkRun();
 let pendingCapture = false;
 
 function captureWebp(): void {

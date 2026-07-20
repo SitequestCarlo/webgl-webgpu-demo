@@ -10,8 +10,8 @@
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
 import '/src/shared/showcase.css';
-import { createProgram } from "../../../src/shared/gl";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { createProgram, GlTimer } from "../../../src/shared/gl";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import simulateGlsl from "../shaders/gl/simulate.glsl?raw";
 import renderGlsl   from "../shaders/gl/render.glsl?raw";
@@ -129,7 +129,9 @@ const params = { N: 256, dt: 0.002, softening: 0.1 };
 rebuild();
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun(10, 100);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer = new GlTimer(gl);
+const cpuTimer = new CpuTimer();
 
 const gui = new GUI({ title: "N-Body (WebGL)" });
 let pendingCapture = false;
@@ -162,6 +164,8 @@ function render(now: number): void {
   // --- Simulations-Pass (Offscreen-FBO) ---
   // Fragment-Shader liest für jeden Partikel-Texel alle N Positionen:
   // N Textur-Fetches pro Fragment × N Fragmente = O(N²) Operationen.
+  cpuTimer.begin();
+  gpuTimer.begin();
   gl.bindFramebuffer(gl.FRAMEBUFFER, writeFBO.fbo);
   gl.viewport(0, 0, texSize, texSize);
   gl.useProgram(simProgram);
@@ -188,6 +192,8 @@ function render(now: number): void {
   gl.bindVertexArray(pointVAO);
   gl.drawArrays(gl.POINTS, 0, N);
   gl.disable(gl.BLEND);
+  gpuTimer.end();
+  cpuTimer.end();
 
   [readFBO, writeFBO] = [writeFBO, readFBO]; // Ping-Pong: nächster Frame liest den gerade beschriebenen Buffer
 
@@ -200,7 +206,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'nbody-webgl.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now);
+  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

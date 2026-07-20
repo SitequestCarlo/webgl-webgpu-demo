@@ -9,9 +9,9 @@
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
-import { getWebGL2, createProgram, createBuffer, resizeCanvasToDisplaySize } from "../../../src/shared/gl";
+import { getWebGL2, createProgram, createBuffer, resizeCanvasToDisplaySize, GlTimer } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -89,7 +89,9 @@ const params = { n: 10000 };
 buildInstances(params.n);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer = new GlTimer(gl);
+const cpuTimer = new CpuTimer();
 
 const gui = new GUI({ title: "Instancing (WebGL)" });
 let pendingCapture = false;
@@ -107,6 +109,7 @@ function render(now: number): void {
     mat4.perspective(proj, Math.PI/3.6, canvas.width/Math.max(1,canvas.height), 0.1, 300);
   }
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  cpuTimer.begin();
   gl.useProgram(program);
   gl.uniformMatrix4fv(gl.getUniformLocation(program,"uView")!,false,view);
   gl.uniformMatrix4fv(gl.getUniformLocation(program,"uProj")!,false,proj);
@@ -115,8 +118,11 @@ function render(now: number): void {
   gl.bindVertexArray(vao);
   // Ein einziger Draw-Call für alle n Instanzen — der Treiber liest per
   // vertexAttribDivisor(1) pro Instanz automatisch aus dem Instanz-Buffer.
+  gpuTimer.begin();
   gl.drawElementsInstanced(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_INT, 0, Math.round(params.n));
+  gpuTimer.end();
   gl.bindVertexArray(null);
+  cpuTimer.end();
 
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
@@ -127,7 +133,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'instancing-webgl.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now);
+  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

@@ -10,7 +10,7 @@ import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import {
   getWebGL2, createProgram, createBuffer,
-  getUniforms, resizeCanvasToDisplaySize,
+  getUniforms, resizeCanvasToDisplaySize, GlTimer,
 } from "../../../src/shared/gl";
 import { createCube } from "../../../src/shared/geometry";
 import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
@@ -95,9 +95,10 @@ let angle = 0;
 rebuildObjects(params.n);
 
 const cpuTimer  = new CpuTimer();
+const gpuTimer  = new GlTimer(gl);
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60, primary: "cpu" });
 
 const gui = new GUI({ title: "Draw-Calls (WebGL)" });
 let pendingCapture = false;
@@ -148,6 +149,7 @@ function render(now: number): void {
   // MESSUNG: N × {Matrizen-Update + 3 Uniform-Calls + drawElements}
   // cpuTimer misst die reine JS-seitige Arbeit (ohne GPU-Wartezeit).
   cpuTimer.begin();
+  gpuTimer.begin();
   for (let i = 0; i < n; i++) {
     mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
     mat4.rotateY(model, model, angle + i * 0.05);
@@ -157,6 +159,7 @@ function render(now: number): void {
     gl.uniform3fv(U.uColor!, [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]]);
     gl.drawElements(gl.TRIANGLES, cube.indexCount, gl.UNSIGNED_INT, 0);
   }
+  gpuTimer.end();
   cpuTimer.end();
 
   gl.bindVertexArray(null);
@@ -172,7 +175,7 @@ function render(now: number): void {
   }
 
   stats.update();
-  benchmark.sample(now);
+  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

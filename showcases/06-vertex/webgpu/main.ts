@@ -8,9 +8,9 @@
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
-import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffer, createGPUIndexBuffer, mat3ToMat4Array, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor } from "../../../src/shared/webgpu";
+import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffer, createGPUIndexBuffer, mat3ToMat4Array, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer } from "../../../src/shared/webgpu";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
 import BENCH_WGSL   from "../shaders/gpu/vertex-simple.wgsl?raw";
 import HEAVY_BASE   from "../shaders/gpu/vertex-heavy.wgsl?raw";
@@ -54,18 +54,9 @@ mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
 let vb: GPUBuffer | null = null, ib: GPUBuffer | null = null;
 let indexCount = 0, triCount = 0;
 
-// GPU-Timestamps
-const supportsTs = device.features.has("timestamp-query");
-let tsSet: GPUQuerySet | null = null;
-let tsResolve: GPUBuffer | null = null;
-let tsRead: GPUBuffer | null = null;
-let gpuMsLast = 0;
-let tsReadPending = false;
-if (supportsTs) {
-  tsSet     = device.createQuerySet({ type: "timestamp", count: 2 });
-  tsResolve = device.createBuffer({ size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
-  tsRead    = device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-}
+// GPU-Timestamps via wiederverwendbarem GpuTimer (Pool mappbarer Staging-Buffer).
+const gpuTimer = new GpuTimer(device);
+const supportsTs = gpuTimer.enabled;
 
 function buildMesh(seg: number, rings: number): void {
   vb?.destroy(); ib?.destroy();
@@ -79,7 +70,8 @@ const params = { segments: 200, rings: 100, autoRotate: true, heavyVS: false };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const cpuTimer = new CpuTimer();
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Vertex Throughput (WebGPU)" });
@@ -94,12 +86,12 @@ gui.add({ run: async () => {
   resultsEl.style.display = "block";
   resultsEl.textContent = `Messe ${(triCount/1000).toFixed(0)}k Dreiecke ...`;
   const r = await benchmark.start();
-  resultsEl.textContent = `[WebGPU] ${(triCount/1000).toFixed(0)}k Dreiecke${params.heavyVS?" (Heavy VS)":""}\n${formatResult(r)}\nGPU: ${gpuMsLast.toFixed(supportsTs?3:2)} ms`;
+  resultsEl.textContent = `[WebGPU] ${(triCount/1000).toFixed(0)}k Dreiecke${params.heavyVS?" (Heavy VS)":""}\n${formatResult(r)}\nGPU: ${gpuTimer.lastMs.toFixed(supportsTs?3:2)} ms`;
 }}, "run").name("Benchmark starten");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
   (triCtrl as {setValue:(v:string)=>void}).setValue(`${(triCount/1000).toFixed(0)}k`);
-  if (gpuMsLast > 0) (msCtrl as {setValue:(v:string)=>void}).setValue(`${gpuMsLast.toFixed(supportsTs?3:2)} ms${supportsTs?" (GPU)":""}`);
+  if (gpuTimer.lastMs > 0) (msCtrl as {setValue:(v:string)=>void}).setValue(`${gpuTimer.lastMs.toFixed(supportsTs?3:2)} ms${supportsTs?" (GPU)":""}`);
 }, 300);
 
 let angle = 0, lastT = performance.now();
@@ -122,13 +114,15 @@ function render(now: number): void {
   sceneData[40]=1; sceneData[41]=0.97; sceneData[42]=0.93; sceneData[43]=0.08; sceneData[44]=48;
   device.queue.writeBuffer(sceneUB, 0, sceneData);
 
-  // GPU-Timestamp-Query: beginningOfPassWriteIndex und endOfPassWriteIndex
-  // werden automatisch vom GPU-Treiber gefüllt. Danach resolveQuerySet + mapAsync.
+  // Swapchain-Textur vor der CPU-Messung holen (Present-Stall zählt nicht als API-Overhead).
+  const colorView = context.getCurrentTexture().createView();
+  cpuTimer.begin();
+  // GPU-Timestamp-Query über GpuTimer: Anfangs-/End-Zeitstempel im selben Pass.
   const cmd = device.createCommandEncoder();
-  const rpDesc: GPURenderPassDescriptor = supportsTs
-    ? { ...makeRenderPassDescriptor(context.getCurrentTexture().createView(), depth.createView(), {r:.06,g:.07,b:.09,a:1}),
-        timestampWrites: { querySet: tsSet!, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } }
-    : makeRenderPassDescriptor(context.getCurrentTexture().createView(), depth.createView(), {r:.06,g:.07,b:.09,a:1});
+  const rpDesc: GPURenderPassDescriptor = {
+    ...makeRenderPassDescriptor(colorView, depth.createView(), {r:.06,g:.07,b:.09,a:1}),
+    timestampWrites: gpuTimer.writesBoth,
+  };
   const pass = cmd.beginRenderPass(rpDesc);
   pass.setPipeline(pipeline);
   pass.setVertexBuffer(0, vb!);
@@ -137,23 +131,14 @@ function render(now: number): void {
   pass.setBindGroup(1, drawBG, [0]);
   pass.drawIndexed(indexCount);
   pass.end();
-  if (supportsTs) {
-    cmd.resolveQuerySet(tsSet!, 0, 2, tsResolve!, 0);
-    cmd.copyBufferToBuffer(tsResolve!, 0, tsRead!, 0, 16);
-  }
+  gpuTimer.resolve(cmd);
   const t0 = performance.now();
   device.queue.submit([cmd.finish()]);
-  // Timestamp asynchron auslesen (Ergebnis ist 1 Frame verzögert)
-  if (supportsTs && !tsReadPending) {
-    tsReadPending = true;
-    tsRead!.mapAsync(GPUMapMode.READ).then(() => {
-      const buf = new BigInt64Array(tsRead!.getMappedRange());
-      gpuMsLast = Number(buf[1] - buf[0]) / 1_000_000; // Nanosekunden → Millisekunden
-      tsRead!.unmap(); tsReadPending = false;
-    }).catch(() => { tsReadPending = false; });
-  } else if (!supportsTs) {
-    gpuMsLast = performance.now() - t0;
-  }
+  gpuTimer.afterSubmit();
+  cpuTimer.end();
+  // CPU-Fallback, falls das Device keine Timestamp-Queries unterstützt.
+  const fallbackMs = supportsTs ? undefined : performance.now() - t0;
+  const gpuMs = gpuTimer.takeSample() ?? fallbackMs;
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
     pendingCapture = false;
@@ -163,7 +148,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'vertex-webgpu.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now);
+  stats.update(); benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

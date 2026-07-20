@@ -13,7 +13,11 @@ export async function getWebGPU(canvas: HTMLCanvasElement): Promise<WebGPUContex
   }
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("Kein WebGPU-Adapter gefunden.");
-  const device = await adapter.requestDevice();
+  // timestamp-query anfordern, falls der Adapter es unterstützt → echte GPU-Zeit-Messung.
+  const requiredFeatures: GPUFeatureName[] = adapter.features.has("timestamp-query")
+    ? ["timestamp-query"]
+    : [];
+  const device = await adapter.requestDevice({ requiredFeatures });
   const context = canvas.getContext("webgpu") as GPUCanvasContext;
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: "opaque" });
@@ -113,4 +117,113 @@ export function makeRenderPassDescriptor(
       depthStoreOp: "store",
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// GPU-Timing via timestamp-query
+// ---------------------------------------------------------------------------
+
+// Misst die ECHTE GPU-Ausführungszeit eines (oder mehrerer) Passes über
+// GPUQuerySet-Zeitstempel — unabhängig von VSync, Compositor und Swapchain-
+// Back-Pressure. Ein Pool mappbarer Staging-Buffer erlaubt mehrere gleichzeitig
+// laufende Readbacks, sodass pro Frame ein eigenständiger Messwert entsteht
+// (statt denselben Wert mehrfach zu zählen).
+//
+// Verwendung (Single-Pass):
+//   const timer = new GpuTimer(device);
+//   const pass = cmd.beginRenderPass({ ...desc, timestampWrites: timer.writesBoth });
+//   ... pass.end();
+//   timer.resolve(cmd);
+//   device.queue.submit([cmd.finish()]);
+//   timer.afterSubmit();
+//   benchmark.sample(now, timer.takeSample() ?? undefined);
+//
+// Verwendung (Compute + Render als ein Frame):
+//   compute-Pass: timestampWrites: timer.writesBegin
+//   render-Pass:  timestampWrites: timer.writesEnd
+export class GpuTimer {
+  readonly enabled: boolean;
+  private querySet?: GPUQuerySet;
+  private resolveBuf?: GPUBuffer;
+  private freeBufs: GPUBuffer[] = [];
+  private pending?: GPUBuffer;
+  private results: number[] = [];
+  private lastMsValue = 0;
+
+  constructor(device: GPUDevice, poolSize = 4) {
+    this.enabled = device.features.has("timestamp-query");
+    if (!this.enabled) return;
+    this.querySet = device.createQuerySet({ type: "timestamp", count: 2 });
+    this.resolveBuf = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+    });
+    for (let i = 0; i < poolSize; i++) {
+      this.freeBufs.push(device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      }));
+    }
+  }
+
+  /** Für Single-Pass: schreibt Anfangs- und End-Zeitstempel im selben Pass. */
+  get writesBoth(): GPURenderPassTimestampWrites | undefined {
+    return this.enabled
+      ? { querySet: this.querySet!, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }
+      : undefined;
+  }
+
+  /** Für Multi-Pass: Anfangs-Zeitstempel im ERSTEN Pass. */
+  get writesBegin(): GPURenderPassTimestampWrites | undefined {
+    return this.enabled
+      ? { querySet: this.querySet!, beginningOfPassWriteIndex: 0 }
+      : undefined;
+  }
+
+  /** Für Multi-Pass: End-Zeitstempel im LETZTEN Pass. */
+  get writesEnd(): GPURenderPassTimestampWrites | undefined {
+    return this.enabled
+      ? { querySet: this.querySet!, endOfPassWriteIndex: 1 }
+      : undefined;
+  }
+
+  /** Nach dem Aufzeichnen aller Passes, VOR encoder.finish(): Query auflösen. */
+  resolve(encoder: GPUCommandEncoder): void {
+    this.pending = undefined;
+    if (!this.enabled || this.freeBufs.length === 0) return;
+    const buf = this.freeBufs.pop()!;
+    encoder.resolveQuerySet(this.querySet!, 0, 2, this.resolveBuf!, 0);
+    encoder.copyBufferToBuffer(this.resolveBuf!, 0, buf, 0, 16);
+    this.pending = buf;
+  }
+
+  /** Direkt nach device.queue.submit(): asynchrones Readback anstoßen. */
+  afterSubmit(): void {
+    if (!this.enabled || !this.pending) return;
+    const buf = this.pending;
+    this.pending = undefined;
+    buf.mapAsync(GPUMapMode.READ).then(() => {
+      const t = new BigInt64Array(buf.getMappedRange());
+      const ms = Number(t[1] - t[0]) / 1_000_000; // ns → ms
+      buf.unmap();
+      if (Number.isFinite(ms) && ms >= 0) {
+        this.results.push(ms);
+        this.lastMsValue = ms;
+      }
+      this.freeBufs.push(buf);
+    }).catch(() => { this.freeBufs.push(buf); });
+  }
+
+  /** Neuesten fertigen GPU-Messwert (ms) liefern und Puffer leeren; null falls keiner. */
+  takeSample(): number | null {
+    if (this.results.length === 0) return null;
+    const v = this.results[this.results.length - 1];
+    this.results.length = 0;
+    return v;
+  }
+
+  /** Zuletzt gemessene GPU-Zeit (ms) für die Live-Anzeige. */
+  get lastMs(): number {
+    return this.lastMsValue;
+  }
 }

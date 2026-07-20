@@ -115,7 +115,7 @@ function resetAccum(): void {
 const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // Panel 1 = ms/Frame ist für Path Tracer aussagekräftiger als FPS
 
-const benchmark = new BenchmarkRun(60, 300);
+const benchmark = new BenchmarkRun();
 let pendingCapture = false;
 
 // Echtzeit-Frame-Zeitmessung mit gl.finish() für GPU-seitige Genauigkeit.

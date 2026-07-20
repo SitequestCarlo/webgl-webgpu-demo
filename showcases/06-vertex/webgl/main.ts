@@ -1,14 +1,14 @@
 // Vertex Throughput Showcase – WebGL2
 // Misst GPU-seitigen Vertex-Shader-Durchsatz bei skalierender Dreieckanzahl.
 //
-// GPU-Timing: gl.finish() nach dem Draw-Call erzwingt CPU-GPU-Synchronisation
-// und gibt die tatsächliche GPU-Renderzeit zurück (blockierend, daher ± 0.1ms Präzision).
+// GPU-Timing: EXT_disjoint_timer_query_webgl2 misst die echte GPU-Renderzeit
+// asynchron (ns-genau), ohne den CPU-Thread mit gl.finish() zu blockieren.
 // Heavy VS: 8 zusätzliche sin/cos-Operationen pro Vertex simulieren teure Skinning-Berechnungen.
 
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
-import { getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize } from "../../../src/shared/gl";
+import { getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize, GlTimer } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
@@ -91,13 +91,14 @@ buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
-const gpuTimer  = new CpuTimer();
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const gpuTimer  = new GlTimer(gl);
+const cpuTimer  = new CpuTimer();
 
 const gui = new GUI({ title: "Vertex Throughput (WebGL)" });
 let pendingCapture = false;
 const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
-const msCtrl  = gui.add({ ms: "– ms" }, "ms").name("GPU-Zeit (finish)").disable();
+  const msCtrl  = gui.add({ ms: "– ms" }, "ms").name(gpuTimer.enabled ? "GPU-Zeit (Query)" : "GPU-Zeit").disable();
 gui.add(params, "segments", 10, 2000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
 gui.add(params, "heavyVS").name("Heavy VS").onChange((v: boolean) => {
@@ -109,12 +110,12 @@ gui.add({ run: async () => {
   resultsEl.style.display = "block";
   resultsEl.textContent = `Messe ${(currentTriCount/1000).toFixed(0)}k Dreiecke ...`;
   const r = await benchmark.start();
-  resultsEl.textContent = `[WebGL] ${(currentTriCount/1000).toFixed(0)}k Dreiecke${params.heavyVS ? " (Heavy VS)" : ""}\n${formatResult(r)}\nGPU avg: ${gpuTimer.average.toFixed(2)} ms`;
+  resultsEl.textContent = `[WebGL] ${(currentTriCount/1000).toFixed(0)}k Dreiecke${params.heavyVS ? " (Heavy VS)" : ""}\n${formatResult(r)}\nGPU avg: ${gpuTimer.lastMs.toFixed(3)} ms`;
 } }, "run").name("Benchmark starten");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
   (triCtrl as {setValue:(v:string)=>void}).setValue(`${(currentTriCount/1000).toFixed(0)}k`);
-  (msCtrl  as {setValue:(v:string)=>void}).setValue(`${gpuTimer.average.toFixed(2)} ms`);
+  (msCtrl  as {setValue:(v:string)=>void}).setValue(`${gpuTimer.lastMs.toFixed(3)} ms`);
 }, 300);
 
 let angle = 0, lastT = performance.now();
@@ -129,6 +130,7 @@ function render(now: number): void {
   mat4.identity(model); mat4.rotateY(model, model, angle);
   mat3.normalFromMat4(normalMat, model);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  cpuTimer.begin();
   gl.useProgram(program);
   gl.uniformMatrix4fv(U.uModel!, false, model);
   gl.uniformMatrix4fv(U.uView!, false, view);
@@ -141,14 +143,14 @@ function render(now: number): void {
   gl.uniform1f(U.uAmbient!, 0.08);
   gl.uniform1f(U.uShininess!, 48);
   if (params.heavyVS && U.uTime) gl.uniform1f(U.uTime, now * 0.001);
-  // GPU-TIMING: gl.finish() blockiert den CPU-Thread bis die GPU fertig ist.
-  // So misst gpuTimer die echte GPU-Zeit dieses Draw-Calls.
+  // GPU-TIMING: asynchrone Timestamp-Query misst die echte GPU-Zeit dieses
+  // Draw-Calls, ohne den CPU-Thread zu blockieren.
   gl.bindVertexArray(currentVao);
   gpuTimer.begin();
   gl.drawElements(gl.TRIANGLES, currentIndexCount, gl.UNSIGNED_INT, 0);
-  gl.finish(); // GPU-Sync für Timing
   gpuTimer.end();
   gl.bindVertexArray(null);
+  cpuTimer.end();
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
     pendingCapture = false;
@@ -159,7 +161,7 @@ function render(now: number): void {
     }, 'image/png');
   }
   stats.update();
-  benchmark.sample(now);
+  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

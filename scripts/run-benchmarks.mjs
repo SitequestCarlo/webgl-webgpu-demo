@@ -16,7 +16,10 @@
  *
  * Messmethodik:
  *   - Pro (Showcase, API, N-Wert): eigener Browser-Context → frische GPU-State
- *   - BenchmarkRun-interne Warmup-Phase (60 Frames) gleicht GPU-DVFS aus
+ *   - Primärmetrik ist die ECHTE GPU-Zeit via Timestamp-Query (WebGPU timestamp-query
+ *     bzw. WebGL2 EXT_disjoint_timer_query_webgl2); Spalte `metric` zeigt gpu|frame.
+ *   - Zeitbasiertes Warmup (800 ms) + Messfenster (≥3 s, ≥60 Frames) gleicht
+ *     GPU-DVFS/Boost-Clocks für beide APIs symmetrisch aus.
  *   - Chrome läuft ohne VSync-Limit (--disable-gpu-vsync, --disable-frame-rate-limit)
  */
 
@@ -114,7 +117,7 @@ const SHOWCASES = [
 // CSV-Hilfsfunktionen
 // ---------------------------------------------------------------------------
 
-const CSV_HEADER = 'showcase,api,n,frames,durationMs,avgFps,avgMs,medMs,p95Ms,minMs,maxMs';
+const CSV_HEADER = 'showcase,api,n,metric,frames,durationMs,avgFps,avgMs,medMs,p95Ms,minMs,maxMs,cpuMedMs,gpuMedMs,frameMedMs';
 
 /** @param {(string|number)[]} cells */
 function toCsvRow(cells) {
@@ -126,12 +129,16 @@ function toCsvRow(cells) {
     .join(',');
 }
 
+/** @param {number|undefined} v */
+const fx = (v) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(3) : '');
+
 /** @param {object} r */
 function rowFromResult(showcaseId, api, n, r) {
   return toCsvRow([
     showcaseId,
     api,
     n,
+    r.metric ?? 'frame',
     r.frames,
     r.durationMs.toFixed(1),
     r.avgFps.toFixed(2),
@@ -140,6 +147,9 @@ function rowFromResult(showcaseId, api, n, r) {
     r.p95Ms.toFixed(3),
     r.minMs.toFixed(3),
     r.maxMs.toFixed(3),
+    fx(r.cpu?.medMs),
+    fx(r.gpu?.medMs),
+    fx(r.frame?.medMs),
   ]);
 }
 
@@ -280,13 +290,15 @@ async function main() {
             allCsvRows.push(row);
 
             console.log(
+              `[${result.metric ?? 'frame'}]  ` +
               `avg ${result.avgMs.toFixed(2)} ms  ` +
               `med ${result.medMs.toFixed(2)} ms  ` +
               `p95 ${result.p95Ms.toFixed(2)} ms`,
             );
           } catch (err) {
             console.log(`FEHLER: ${err.message}`);
-            const errRow = toCsvRow([showcase.id, api, n, '', '', '', '', '', '', '', err.message]);
+            // 15 Spalten: showcase,api,n,metric + 10 Leerspalten + Fehlermeldung (frameMedMs-Position)
+            const errRow = toCsvRow([showcase.id, api, n, 'error', '', '', '', '', '', '', '', '', '', '', err.message]);
             apiCsvRows.push(errRow);
             allCsvRows.push(errRow);
           } finally {

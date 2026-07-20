@@ -12,7 +12,7 @@ import { mat3, mat4, vec3 } from "gl-matrix";
 import {
   getWebGPU, resizeWebGPUCanvas, createDepthTexture,
   createGPUVertexBuffer, createGPUIndexBuffer, mat3ToMat4Array,
-  VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor,
+  VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer,
 } from "../../../src/shared/webgpu";
 import { createCube } from "../../../src/shared/geometry";
 import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
@@ -102,9 +102,10 @@ let angle = 0;
 rebuildObjects(params.n);
 
 const cpuTimer  = new CpuTimer();
+const gpuTimer  = new GpuTimer(device);
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun(30, 200);
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60, primary: "cpu" });
 let depth = createDepthTexture(device, 1, 1);
 
 const gui = new GUI({ title: "Draw-Calls (WebGPU)" });
@@ -146,8 +147,13 @@ function render(now: number): void {
   sceneData[44] = 32; // shininess
   device.queue.writeBuffer(sceneUB, 0, sceneData);
 
-  // MESSUNG: N Draw-Calls per Command-Buffer aufzeichnen
-  // cpuTimer misst JS + Command-Recording (nicht GPU-Zeit).
+  // Swapchain-Textur VOR der CPU-Messung holen: getCurrentTexture() kann durch
+  // Present-Back-Pressure blockieren; das ist kein API-Overhead und würde die
+  // CPU-Zeit verfälschen.
+  const colorView = context.getCurrentTexture().createView();
+
+  // MESSUNG: N Draw-Calls per Command-Buffer aufzeichnen + submit.
+  // cpuTimer misst den reinen CPU-/API-Overhead (Record+Submit), NICHT die GPU-Zeit.
   cpuTimer.begin();
   const floatsPerDraw = DRAW_UNIFORM_SIZE / 4;
   for (let i = 0; i < n; i++) {
@@ -161,10 +167,13 @@ function render(now: number): void {
 
   // Command-Buffer zusammensetzen: N setBindGroup + drawIndexed, dann 1 submit()
   const cmd  = device.createCommandEncoder();
-  const pass = cmd.beginRenderPass(makeRenderPassDescriptor(
-    context.getCurrentTexture().createView(), depth.createView(),
-    { r: 0.06, g: 0.07, b: 0.09, a: 1 }
-  ));
+  const pass = cmd.beginRenderPass({
+    ...makeRenderPassDescriptor(
+      colorView, depth.createView(),
+      { r: 0.06, g: 0.07, b: 0.09, a: 1 }
+    ),
+    timestampWrites: gpuTimer.writesBoth,
+  });
   pass.setPipeline(pipeline);
   pass.setVertexBuffer(0, cubeVB);
   pass.setIndexBuffer(cubeIB, "uint32");
@@ -174,7 +183,9 @@ function render(now: number): void {
     pass.drawIndexed(cube.indexCount);
   }
   pass.end();
+  gpuTimer.resolve(cmd);
   device.queue.submit([cmd.finish()]);
+  gpuTimer.afterSubmit();
   cpuTimer.end();
 
   // Screenshot-Trigger (einmalig nach Button-Klick)
@@ -188,7 +199,7 @@ function render(now: number): void {
   }
 
   stats.update();
-  benchmark.sample(now);
+  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 
