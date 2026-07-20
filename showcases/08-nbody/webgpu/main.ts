@@ -1,3 +1,11 @@
+// N-Body Simulation Showcase – WebGPU
+// Gravitationssimulation O(N²): jedes Partikel wird von allen anderen angezogen.
+//
+// WebGPU-Ansatz: Compute-Shader mit Storage Buffers (Ping-Pong).
+// Jeder GPU-Thread berechnet die Kräfte für 1 Partikel (alle N Nachbarn).
+// dispatch(ceil(N/64)): 64 Threads pro Workgroup laufen parallel.
+// Kein CPU-Roundtrip: Simulationsergebnis bleibt im GPU-Speicher für den Render-Pass.
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
@@ -111,6 +119,31 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] N-Body N=${currentN}\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [64, 128, 256, 512, 1024, 2048, 4096];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["Partikel;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(5, 20);
+  for (const n of N_SWEEP) {
+    params.N = n; rebuild(n);
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: N=${n} Partikel ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "nbody-webgpu.csv"; a.click(); URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 // --- Render Loop -------------------------------------------------------------
@@ -131,6 +164,9 @@ function render(now: number): void {
   new Uint32Array(renderUData.buffer)[16] = currentN;
   device.queue.writeBuffer(renderUB, 0, renderUData);
 
+  // --- Compute-Pass: Simulation ---
+  // Jede Workgroup berechnet 64 Partikel parallel.
+  // Ping-Pong: bufA → lesen, bufB → schreiben (flip nach jedem Frame).
   const cmd = device.createCommandEncoder();
   const cp  = cmd.beginComputePass();
   cp.setPipeline(computePipeline);
@@ -138,6 +174,8 @@ function render(now: number): void {
   cp.dispatchWorkgroups(Math.ceil(currentN / 64));
   cp.end();
 
+  // --- Render-Pass: Partikel als Punkte visualisieren ---
+  // Vertex-Shader liest direkt aus dem Storage Buffer des gerade beschriebenen Pings.
   const rp = cmd.beginRenderPass({ colorAttachments: [{
     view: context.getCurrentTexture().createView(), clearValue: {r:0,g:0,b:0,a:1}, loadOp: "clear", storeOp: "store",
   }]});
@@ -146,9 +184,18 @@ function render(now: number): void {
   rp.draw(currentN);
   rp.end();
   device.queue.submit([cmd.finish()]);
-  flip = 1 - flip;
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'nbody-webgpu.png'; a.click(); }, 'image/png'); }
-  stats.update(); benchmark.sample(now);
+  flip = 1 - flip; // Ping-Pong umschalten
+
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'nbody-webgpu.png'; a.click();
+    }, 'image/png');
+  }
+  stats.update(); benchmark.sample(now); sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

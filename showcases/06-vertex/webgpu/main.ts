@@ -1,3 +1,10 @@
+// Vertex Throughput Showcase – WebGPU
+// Misst GPU-seitigen Vertex-Shader-Durchsatz bei skalierender Dreieckanzahl.
+//
+// GPU-Timing via Timestamp-Query: GPUQuerySet mit 2 Zeitstempeln (Begin/End Pass).
+// Ergebnis wird asynchron via mapAsync ausgelesen (kein CPU-Stall, ~0.001ms Präzision).
+// Falls das Device keine Timestamp-Queries unterstützt, wird performance.now() verwendet.
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
@@ -89,6 +96,33 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] ${(triCount/1000).toFixed(0)}k Dreiecke${params.heavyVS?" (Heavy VS)":""}\n${formatResult(r)}\nGPU: ${gpuMsLast.toFixed(supportsTs?3:2)} ms`;
 }}, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [20, 50, 100, 200, 500, 1000, 2000];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["Segmente;Dreiecke;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(20, 60);
+  for (const seg of N_SWEEP) {
+    const rings = Math.round(seg / 2);
+    params.segments = seg; params.rings = rings;
+    buildMesh(seg, rings);
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: ${seg} Segmente (~${(seg * rings * 2 / 1000).toFixed(0)}k Dreiecke) ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${seg};${seg * rings * 2};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "vertex-webgpu.csv"; a.click(); URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
   (triCtrl as {setValue:(v:string)=>void}).setValue(`${(triCount/1000).toFixed(0)}k`);
@@ -115,6 +149,8 @@ function render(now: number): void {
   sceneData[40]=1; sceneData[41]=0.97; sceneData[42]=0.93; sceneData[43]=0.08; sceneData[44]=48;
   device.queue.writeBuffer(sceneUB, 0, sceneData);
 
+  // GPU-Timestamp-Query: beginningOfPassWriteIndex und endOfPassWriteIndex
+  // werden automatisch vom GPU-Treiber gefüllt. Danach resolveQuerySet + mapAsync.
   const cmd = device.createCommandEncoder();
   const rpDesc: GPURenderPassDescriptor = supportsTs
     ? { ...makeRenderPassDescriptor(context.getCurrentTexture().createView(), depth.createView(), {r:.06,g:.07,b:.09,a:1}),
@@ -134,18 +170,27 @@ function render(now: number): void {
   }
   const t0 = performance.now();
   device.queue.submit([cmd.finish()]);
+  // Timestamp asynchron auslesen (Ergebnis ist 1 Frame verzögert)
   if (supportsTs && !tsReadPending) {
     tsReadPending = true;
     tsRead!.mapAsync(GPUMapMode.READ).then(() => {
       const buf = new BigInt64Array(tsRead!.getMappedRange());
-      gpuMsLast = Number(buf[1] - buf[0]) / 1_000_000;
+      gpuMsLast = Number(buf[1] - buf[0]) / 1_000_000; // Nanosekunden → Millisekunden
       tsRead!.unmap(); tsReadPending = false;
     }).catch(() => { tsReadPending = false; });
   } else if (!supportsTs) {
     gpuMsLast = performance.now() - t0;
   }
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'vertex-webgpu.png'; a.click(); }, 'image/png'); }
-  stats.update(); benchmark.sample(now);
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'vertex-webgpu.png'; a.click();
+    }, 'image/png');
+  }
+  stats.update(); benchmark.sample(now); sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

@@ -1,3 +1,10 @@
+// Draw-Call Overhead Showcase – WebGL2
+// Misst den API-Overhead pro Zeichenbefehl bei N Objekten.
+//
+// WebGL-spezifisch: N Draw-Calls = N × {uniformMatrix4fv + uniform3fv + drawElements}
+// Jeder Aufruf ist ein synchroner JS→Native-Übergang (State-Validierung im Treiber).
+// Ab ~5k Objekten wird der CPU-Thread zum Flaschenhals, die GPU wartet.
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
@@ -103,6 +110,35 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] N=${params.n} Draw-Calls\n${formatResult(r)}\nCPU avg: ${cpuTimer.average.toFixed(2)} ms`;
 } }, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["N;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(15, 60);
+  for (const n of N_SWEEP) {
+    params.n = n;
+    rebuildObjects(n);
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: N=${n.toLocaleString("de-DE")} ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "drawcalls-webgl.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 setInterval(() => {
@@ -132,7 +168,14 @@ function render(now: number): void {
   gl.uniform1f(U.uShininess!, 32);
   gl.bindVertexArray(vao);
 
+// ---------------------------------------------------------------------------
+// Render-Loop: N Draw-Calls (Kernmessung)
+// ---------------------------------------------------------------------------
+
   const n = Math.round(params.n);
+
+  // MESSUNG: N × {Matrizen-Update + 3 Uniform-Calls + drawElements}
+  // cpuTimer misst die reine JS-seitige Arbeit (ohne GPU-Wartezeit).
   cpuTimer.begin();
   for (let i = 0; i < n; i++) {
     mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
@@ -146,9 +189,20 @@ function render(now: number): void {
   cpuTimer.end();
 
   gl.bindVertexArray(null);
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'drawcalls-webgl.png'; a.click(); }, 'image/png'); }
+
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'drawcalls-webgl.png'; a.click();
+    }, 'image/png');
+  }
+
   stats.update();
   benchmark.sample(now);
+  sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

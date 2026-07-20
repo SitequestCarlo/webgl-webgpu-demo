@@ -8,7 +8,8 @@ a.card h2{margin:0 0 .4rem;font-size:1.1rem}a.card p{color:var(--muted);font-siz
 .tag{display:inline-block;font-size:.72rem;padding:.1rem .5rem;border-radius:999px;background:#23303f;color:var(--accent);margin-right:.3rem}
 .tag.warn{background:#3f2323;color:#f87171}
 a.back{display:inline-block;margin:2.5rem 1.5rem 0;color:var(--muted);text-decoration:none;font-size:.85rem}a.back:hover{color:var(--accent)}
-table{width:100%;border-collapse:collapse;font-size:.9rem;margin:1rem 0}th,td{text-align:left;padding:.35rem .6rem;border-bottom:1px solid var(--border)}th{color:var(--muted);font-weight:500}.better{color:#4ade80}</style></head>
+table{width:100%;border-collapse:collapse;font-size:.9rem;margin:1rem 0}th,td{text-align:left;padding:.35rem .6rem;border-bottom:1px solid var(--border)}th{color:var(--muted);font-weight:500}
+.better{color:#4ade80}</style></head>
 <body><a class="back" href="../../index.html">&larr; Übersicht</a>
 <header><h1>08 · N-Body Simulation</h1>
 <p class="lead">N Partikel mit gravitativer Wechselwirkung (O(N²)). Zeigt strukturellen Vorteil von Compute-Shadern.</p></header>
@@ -23,4 +24,5 @@ table{width:100%;border-collapse:collapse;font-size:.9rem;margin:1rem 0}th,td{te
     <tr><td>Zugriff auf alle N Partikel</td><td>Textur-Fetch</td><td class="better">Direkter Buffer-Zugriff</td></tr>
     <tr><td>Max. N (interaktiv)</td><td>~512 (Fragment-Bottleneck)</td><td class="better">~4096+</td></tr>
   </table>
-</div></body></html>
+</div>
+</body></html>

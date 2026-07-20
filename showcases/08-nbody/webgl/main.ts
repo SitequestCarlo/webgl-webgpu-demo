@@ -1,3 +1,12 @@
+// N-Body Simulation Showcase – WebGL2
+// Gravitationssimulation O(N²): jedes Partikel wird von allen anderen angezogen.
+//
+// WebGL-Ansatz: Simulation via Textur-Ping-Pong.
+// Jede Partikelposition ist ein Texel einer RGBA32F-Textur (sz×sz).
+// Der Simulations-Pass rendert auf ein Offscreen-FBO: der Fragment-Shader
+// liest für jeden Texel alle N Positionen aus der Quelltextur (N Textur-Fetches).
+// Kein Compute-Shader verfügbar — deshalb diese Umgehungslösung.
+
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
 import '/src/shared/showcase.css';
@@ -9,7 +18,9 @@ import renderGlsl   from "../shaders/gl/render.glsl?raw";
 
 const [SIM_VS, _SIM_FS_BASE] = splitGLSL(simulateGlsl);
 const [PASS_VS, PASS_FS]     = splitGLSL(renderGlsl);
-// buildSimFS ersetzt #define N 256 durch den aktuellen Wert (Shader-Rebuild bei N-Wechsel)
+// buildSimFS ersetzt #define N 256 durch den aktuellen Wert.
+// WebGL GLSL benötigt eine compile-time Konstante für Loop-Grenzen (GLSL ES 3.0).
+// Bei jedem N-Wechsel muss der Shader daher neu kompiliert werden.
 function buildSimFS(n: number): string {
   return _SIM_FS_BASE.replace('#define N 256', `#define N ${n}`);
 }
@@ -122,7 +133,7 @@ const benchmark = new BenchmarkRun(10, 100);
 
 const gui = new GUI({ title: "N-Body (WebGL)" });
 let pendingCapture = false;
-gui.add(params, "N", [64, 128, 256, 512]).name("N Partikel").onChange((v: number) => { N = v; rebuild(); });
+gui.add(params, "N", [64, 128, 256, 512, 1024, 2048, 4096]).name("N Partikel").onChange((v: number) => { N = v; rebuild(); });
 gui.add(params, "dt", 0.0005, 0.01, 0.0001).name("Zeitschritt");
 gui.add(params, "softening", 0.01, 1.0, 0.01).name("Softening");
 gui.add({ run: async () => {
@@ -130,6 +141,31 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] N-Body N=${N}\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [64, 128, 256, 512, 1024, 2048, 4096];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["Partikel;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(5, 20);
+  for (const n of N_SWEEP) {
+    N = n; params.N = n; rebuild();
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: N=${n} Partikel ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "nbody-webgl.csv"; a.click(); URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 // --- Render Loop ------------------------------------------------------------
@@ -148,7 +184,9 @@ function render(now: number): void {
   mat4.perspective(proj4, Math.PI / 3.6, canvas.width / Math.max(1, canvas.height), 0.01, 200);
   mat4.multiply(viewProj, proj4, view4);
 
-  // --- Simulation pass ---
+  // --- Simulations-Pass (Offscreen-FBO) ---
+  // Fragment-Shader liest für jeden Partikel-Texel alle N Positionen:
+  // N Textur-Fetches pro Fragment × N Fragmente = O(N²) Operationen.
   gl.bindFramebuffer(gl.FRAMEBUFFER, writeFBO.fbo);
   gl.viewport(0, 0, texSize, texSize);
   gl.useProgram(simProgram);
@@ -161,7 +199,8 @@ function render(now: number): void {
   gl.bindVertexArray(quadVAO);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-  // --- Render pass ---
+  // --- Render-Pass (Canvas) ---
+  // Partikel als GL_POINTS rendern; Vertex-Shader liest Position aus der FBO-Textur.
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -175,9 +214,18 @@ function render(now: number): void {
   gl.drawArrays(gl.POINTS, 0, N);
   gl.disable(gl.BLEND);
 
-  [readFBO, writeFBO] = [writeFBO, readFBO];
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'nbody-webgl.png'; a.click(); }, 'image/png'); }
-  stats.update(); benchmark.sample(now);
+  [readFBO, writeFBO] = [writeFBO, readFBO]; // Ping-Pong: nächster Frame liest den gerade beschriebenen Buffer
+
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'nbody-webgl.png'; a.click();
+    }, 'image/png');
+  }
+  stats.update(); benchmark.sample(now); sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

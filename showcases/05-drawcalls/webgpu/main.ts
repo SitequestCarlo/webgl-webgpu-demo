@@ -1,3 +1,11 @@
+// Draw-Call Overhead Showcase – WebGPU
+// Misst den API-Overhead pro Zeichenbefehl bei N Objekten.
+//
+// WebGPU-spezifisch: N Draw-Calls als Command-Buffer aufgezeichnet, dann 1 submit().
+// Das Command-Recording ist leichtgewichtiger als WebGLs sofortige Befehle:
+// N × {setBindGroup(dynOffset) + drawIndexed} + 1 submit()
+// → weniger API-Overhead, GPU und CPU können parallel arbeiten.
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
@@ -110,6 +118,35 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] N=${params.n} Draw-Calls\n${formatResult(r)}\nCPU avg: ${cpuTimer.average.toFixed(2)} ms`;
 } }, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["N;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(15, 60);
+  for (const n of N_SWEEP) {
+    params.n = n;
+    rebuildObjects(Math.round(n));
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: N=${n.toLocaleString("de-DE")} ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "drawcalls-webgpu.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 setInterval(() => { (cpuCtrl as { setValue:(v:string)=>void }).setValue(`${cpuTimer.average.toFixed(2)} ms`); }, 300);
@@ -138,7 +175,8 @@ function render(now: number): void {
   sceneData[44] = 32; // shininess
   device.queue.writeBuffer(sceneUB, 0, sceneData);
 
-  // Draw-Uniforms (alle N, dann 1 submit)
+  // MESSUNG: N Draw-Calls per Command-Buffer aufzeichnen
+  // cpuTimer misst JS + Command-Recording (nicht GPU-Zeit).
   cpuTimer.begin();
   const floatsPerDraw = DRAW_UNIFORM_SIZE / 4;
   for (let i = 0; i < n; i++) {
@@ -150,6 +188,7 @@ function render(now: number): void {
   }
   device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
 
+  // Command-Buffer zusammensetzen: N setBindGroup + drawIndexed, dann 1 submit()
   const cmd  = device.createCommandEncoder();
   const pass = cmd.beginRenderPass(makeRenderPassDescriptor(
     context.getCurrentTexture().createView(), depth.createView(),
@@ -167,9 +206,19 @@ function render(now: number): void {
   device.queue.submit([cmd.finish()]);
   cpuTimer.end();
 
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'drawcalls-webgpu.png'; a.click(); }, 'image/png'); }
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'drawcalls-webgpu.png'; a.click();
+    }, 'image/png');
+  }
+
   stats.update();
   benchmark.sample(now);
+  sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

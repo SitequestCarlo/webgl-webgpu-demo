@@ -1,3 +1,10 @@
+// Vertex Throughput Showcase – WebGL2
+// Misst GPU-seitigen Vertex-Shader-Durchsatz bei skalierender Dreieckanzahl.
+//
+// GPU-Timing: gl.finish() nach dem Draw-Call erzwingt CPU-GPU-Synchronisation
+// und gibt die tatsächliche GPU-Renderzeit zurück (blockierend, daher ± 0.1ms Präzision).
+// Heavy VS: 8 zusätzliche sin/cos-Operationen pro Vertex simulieren teure Skinning-Berechnungen.
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
@@ -104,6 +111,33 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] ${(currentTriCount/1000).toFixed(0)}k Dreiecke${params.heavyVS ? " (Heavy VS)" : ""}\n${formatResult(r)}\nGPU avg: ${gpuTimer.average.toFixed(2)} ms`;
 } }, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [20, 50, 100, 200, 500, 1000, 2000];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["Segmente;Dreiecke;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(20, 60);
+  for (const seg of N_SWEEP) {
+    const rings = Math.round(seg / 2);
+    params.segments = seg; params.rings = rings;
+    buildMesh(seg, rings);
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: ${seg} Segmente (~${(seg * rings * 2 / 1000).toFixed(0)}k Dreiecke) ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${seg};${seg * rings * 2};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "vertex-webgl.csv"; a.click(); URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
   (triCtrl as {setValue:(v:string)=>void}).setValue(`${(currentTriCount/1000).toFixed(0)}k`);
@@ -134,15 +168,26 @@ function render(now: number): void {
   gl.uniform1f(U.uAmbient!, 0.08);
   gl.uniform1f(U.uShininess!, 48);
   if (params.heavyVS && U.uTime) gl.uniform1f(U.uTime, now * 0.001);
+  // GPU-TIMING: gl.finish() blockiert den CPU-Thread bis die GPU fertig ist.
+  // So misst gpuTimer die echte GPU-Zeit dieses Draw-Calls.
   gl.bindVertexArray(currentVao);
   gpuTimer.begin();
   gl.drawElements(gl.TRIANGLES, currentIndexCount, gl.UNSIGNED_INT, 0);
   gl.finish(); // GPU-Sync für Timing
   gpuTimer.end();
   gl.bindVertexArray(null);
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'vertex-webgl.png'; a.click(); }, 'image/png'); }
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'vertex-webgl.png'; a.click();
+    }, 'image/png');
+  }
   stats.update();
   benchmark.sample(now);
+  sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

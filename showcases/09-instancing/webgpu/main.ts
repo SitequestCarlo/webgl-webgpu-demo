@@ -1,3 +1,11 @@
+// Instanced Rendering Showcase – WebGPU
+// N Instanzen in einem einzigen Draw-Call (drawIndexed).
+//
+// WebGPU-Ansatz: Per-Instanz-Daten in einem Storage Buffer.
+// Der Vertex-Shader liest über @builtin(instance_index) direkt auf seine Instanzdaten.
+// Vorteil: Storage Buffer kann von Compute-Shadern geschrieben werden —
+// ermöglicht GPU-seitige Partikel-Simulation ohne CPU-Roundtrip.
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
@@ -66,6 +74,8 @@ function hsl(h: number, s: number, l: number): [number,number,number] {
 }
 
 function buildInstances(n: number): void {
+  // Instanz-Buffer bei N-Änderung neu allozieren (gewünschte Größe).
+  // Destroy old + create new ist bei WebGPU die Standard-Methode für Resize.
   instBuf?.destroy();
   const data = new Float32Array(n * INST_STRIDE);
   const side = Math.ceil(Math.cbrt(n)), half=(side-1)/2, sp=1.2;
@@ -102,6 +112,32 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGPU] ${params.n} Instanzen\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["Instanzen;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(15, 60);
+  for (const n of N_SWEEP) {
+    params.n = n;
+    buildInstances(Math.round(n));
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: N=${n.toLocaleString("de-DE")} Instanzen ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "instancing-webgpu.csv"; a.click(); URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 function render(now: number): void {
@@ -118,11 +154,21 @@ function render(now: number): void {
   const pass = cmd.beginRenderPass(makeRenderPassDescriptor(context.getCurrentTexture().createView(), depth.createView(), {r:.06,g:.07,b:.09,a:1}));
   pass.setPipeline(pipeline); pass.setBindGroup(0, bg);
   pass.setVertexBuffer(0, vb); pass.setIndexBuffer(ib, "uint32");
+  // Ein einziger Draw-Call: N Instanzen — @builtin(instance_index) gibt den Index.
   pass.drawIndexed(geo.indexCount, Math.round(params.n));
   pass.end();
   device.queue.submit([cmd.finish()]);
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'instancing-webgpu.png'; a.click(); }, 'image/png'); }
-  stats.update(); benchmark.sample(now);
+
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'instancing-webgpu.png'; a.click();
+    }, 'image/png');
+  }
+  stats.update(); benchmark.sample(now); sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 

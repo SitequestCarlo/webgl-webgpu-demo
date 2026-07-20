@@ -1,3 +1,11 @@
+// Instanced Rendering Showcase – WebGL2
+// N Instanzen in einem einzigen Draw-Call (gl.drawElementsInstanced).
+//
+// WebGL-Ansatz: Per-Instanz-Daten (Position + Farbe) liegen in einem Vertex-Buffer
+// mit vertexAttribDivisor=1. Der Treiber liest pro Instanz automatisch die nächsten
+// 6 Floats aus dem Buffer — kein Shader-Loop, keine Uniform-Calls pro Instanz.
+// Skalierbarkeit: bis ~500k Instanzen (GPU-bound, nicht CPU-bound).
+
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
@@ -66,6 +74,8 @@ function buildInstances(n: number): void {
     const h = (i/n)*360, [r,g,b] = hsl(h, 0.7, 0.5);
     instData[i*6+3] = r; instData[i*6+4] = g; instData[i*6+5] = b;
   }
+  // Instanz-Buffer mit nächstem N befüllen.
+  // bufferSubData überschreibt nur den benötigten Teil (kein Realloc).
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, instData.subarray(0, n*6));
 }
@@ -89,6 +99,32 @@ gui.add({ run: async () => {
   const r = await benchmark.start();
   resultsEl.textContent = `[WebGL] ${params.n} Instanzen\n${formatResult(r)}`;
 }}, "run").name("Benchmark starten");
+
+let sweepBenchmark: BenchmarkRun | null = null;
+const N_SWEEP = [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000];
+gui.add({ sweep: async () => {
+  resultsEl.style.display = "block";
+  const rows = ["Instanzen;avg_ms;avg_fps;p95_ms;min_ms;max_ms"];
+  sweepBenchmark = new BenchmarkRun(15, 60);
+  for (const n of N_SWEEP) {
+    params.n = n;
+    buildInstances(n);
+    let sumMs = 0, sumP95 = 0, sumMin = 0, sumMax = 0;
+    for (let run = 0; run < 5; run++) {
+      resultsEl.textContent = `Sweep: N=${n.toLocaleString("de-DE")} Instanzen ... (Lauf ${run + 1}/5)`;
+      const r = await sweepBenchmark.start();
+      sumMs += r.avgMs; sumP95 += r.p95Ms; sumMin += r.minMs; sumMax += r.maxMs;
+    }
+    const avgMs = sumMs / 5;
+    const f = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+    rows.push(`${n};${f(avgMs,3)};${f(1000/avgMs,1)};${f(sumP95/5,3)};${f(sumMin/5,3)};${f(sumMax/5,3)}`);
+  }
+  sweepBenchmark = null;
+  resultsEl.textContent = "Sweep abgeschlossen.";
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "instancing-webgl.csv"; a.click(); URL.revokeObjectURL(a.href);
+}}, "sweep").name("Auto-Sweep (CSV)");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
 function render(now: number): void {
@@ -103,10 +139,21 @@ function render(now: number): void {
   gl.uniform3fv(gl.getUniformLocation(program,"uLightPos")!,lightPos);
   gl.uniform3fv(gl.getUniformLocation(program,"uViewPos")!,cameraPos);
   gl.bindVertexArray(vao);
+  // Ein einziger Draw-Call für alle n Instanzen — der Treiber liest per
+  // vertexAttribDivisor(1) pro Instanz automatisch aus dem Instanz-Buffer.
   gl.drawElementsInstanced(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_INT, 0, Math.round(params.n));
   gl.bindVertexArray(null);
-  if (pendingCapture) { pendingCapture = false; canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'instancing-webgl.png'; a.click(); }, 'image/png'); }
-  stats.update(); benchmark.sample(now);
+
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    canvas.toBlob(b => {
+      if (!b) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'instancing-webgl.png'; a.click();
+    }, 'image/png');
+  }
+  stats.update(); benchmark.sample(now); sweepBenchmark?.sample(now);
   requestAnimationFrame(render);
 }
 
