@@ -10,8 +10,8 @@
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
 import '/src/shared/showcase.css';
-import { createProgram, GlTimer } from "../../../src/shared/gl";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createProgram, GlTimer, glFenceAsync } from "../../../src/shared/gl";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import simulateGlsl from "../shaders/gl/simulate.glsl?raw";
 import renderGlsl   from "../shaders/gl/render.glsl?raw";
@@ -34,7 +34,7 @@ gl.getExtension("EXT_color_buffer_float");
 
 // --- Szene ------------------------------------------------------------------
 
-let N = 256;
+let N = readBenchmarkValue() ?? 256;
 let texSize = Math.ceil(Math.sqrt(N)); // Textur-Seitenlänge
 
 // Zwei Ping-Pong FBOs (Position + Velocity)
@@ -125,11 +125,11 @@ function rebuild(): void {
 
 // --- GUI --------------------------------------------------------------------
 
-const params = { N: 256, dt: 0.002, softening: 0.1 };
+const params = { N: readBenchmarkValue() ?? 256, dt: 0.002, softening: 0.1 };
 rebuild();
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
 const gpuTimer = new GlTimer(gl);
 const cpuTimer = new CpuTimer();
 
@@ -156,7 +156,7 @@ function resizeCanvas(): void {
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
 }
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   resizeCanvas();
   mat4.perspective(proj4, Math.PI / 3.6, canvas.width / Math.max(1, canvas.height), 0.01, 200);
   mat4.multiply(viewProj, proj4, view4);
@@ -206,6 +206,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'nbody-webgl.png'; a.click();
     }, 'image/png');
   }
+  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) → Timer-Query verfügbar
   stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }

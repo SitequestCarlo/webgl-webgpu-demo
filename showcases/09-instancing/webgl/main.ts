@@ -9,9 +9,9 @@
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, vec3 } from "gl-matrix";
-import { getWebGL2, createProgram, createBuffer, resizeCanvasToDisplaySize, GlTimer } from "../../../src/shared/gl";
+import { getWebGL2, createProgram, createBuffer, resizeCanvasToDisplaySize, GlTimer, glFenceAsync } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -85,11 +85,11 @@ function hsl(h: number, s: number, l: number): [number,number,number] {
   return [r+m,g+m,b+m];
 }
 
-const params = { n: 10000 };
+const params = { n: readBenchmarkValue() ?? 10000 };
 buildInstances(params.n);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
 const gpuTimer = new GlTimer(gl);
 const cpuTimer = new CpuTimer();
 
@@ -103,7 +103,7 @@ gui.add({ run: async () => {
 }}, "run").name("Benchmark starten");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   if (resizeCanvasToDisplaySize(canvas)) {
     gl.viewport(0,0,canvas.width,canvas.height);
     mat4.perspective(proj, Math.PI/3.6, canvas.width/Math.max(1,canvas.height), 0.1, 300);
@@ -133,6 +133,7 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'instancing-webgl.png'; a.click();
     }, 'image/png');
   }
+  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) → Timer-Query verfügbar
   stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }

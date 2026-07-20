@@ -8,9 +8,9 @@
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
-import { getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize, GlTimer } from "../../../src/shared/gl";
+import { getWebGL2, createProgram, createBuffer, getUniforms, resizeCanvasToDisplaySize, GlTimer, glFenceAsync } from "../../../src/shared/gl";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import vertexSimpleGlsl from "../shaders/gl/vertex-simple.glsl?raw";
 
@@ -86,12 +86,12 @@ function buildMesh(segments: number, rings: number): void {
   gl.bindVertexArray(null);
 }
 
-const params = { segments: 200, rings: 100, autoRotate: true, heavyVS: false };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 100, autoRotate: true, heavyVS: false };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
 const gpuTimer  = new GlTimer(gl);
 const cpuTimer  = new CpuTimer();
 
@@ -120,7 +120,7 @@ setInterval(() => {
 
 let angle = 0, lastT = performance.now();
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   const dt = (now - lastT) / 1000; lastT = now;
   if (resizeCanvasToDisplaySize(canvas)) {
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -161,6 +161,7 @@ function render(now: number): void {
     }, 'image/png');
   }
   stats.update();
+  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) → Timer-Query verfügbar
   benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }

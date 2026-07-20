@@ -3,6 +3,21 @@
 
 import Stats from "stats.js";
 
+// Liest den Benchmark-Parameterwert aus der URL (?v=…). Erlaubt es, ein Showcase
+// direkt mit dem korrekten Wert zu laden (statt den lil-gui-Slider zu animieren) —
+// wichtig für den automatisierten Runner und reproduzierbare Messungen.
+export function readBenchmarkValue(): number | null {
+  const v = new URLSearchParams(location.search).get("v");
+  if (v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// true, wenn die URL ?autostart enthält → Benchmark automatisch starten.
+export function shouldAutostart(): boolean {
+  return new URLSearchParams(location.search).has("autostart");
+}
+
 export function createStatsPanel(container: HTMLElement = document.body): Stats {
   const stats = new Stats();
   stats.showPanel(0); // 0: fps, 1: ms, 2: mb

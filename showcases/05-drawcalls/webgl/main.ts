@@ -10,10 +10,10 @@ import { GUI } from "lil-gui";
 import { mat3, mat4, vec3 } from "gl-matrix";
 import {
   getWebGL2, createProgram, createBuffer,
-  getUniforms, resizeCanvasToDisplaySize, GlTimer,
+  getUniforms, resizeCanvasToDisplaySize, GlTimer, glFenceAsync,
 } from "../../../src/shared/gl";
 import { createCube } from "../../../src/shared/geometry";
-import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult } from "../../../src/shared/benchmark";
+import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import blinnPhongGlsl from "../shaders/gl/blinn-phong.glsl?raw";
 
@@ -90,7 +90,7 @@ function hsl(h: number, s: number, l: number): [number, number, number] {
 
 // --- Params & GUI ------------------------------------------------------------
 
-const params = { n: 1000, autoRotate: true };
+const params = { n: readBenchmarkValue() ?? 1000, autoRotate: true };
 let angle = 0;
 rebuildObjects(params.n);
 
@@ -98,7 +98,7 @@ const cpuTimer  = new CpuTimer();
 const gpuTimer  = new GlTimer(gl);
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60, primary: "cpu" });
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120, primary: "cpu" });
 
 const gui = new GUI({ title: "Draw-Calls (WebGL)" });
 let pendingCapture = false;
@@ -121,7 +121,7 @@ setInterval(() => {
 
 let lastT = performance.now();
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   const dt = (now - lastT) / 1000; lastT = now;
   if (resizeCanvasToDisplaySize(canvas)) {
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -175,6 +175,7 @@ function render(now: number): void {
   }
 
   stats.update();
+  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) → Timer-Query verfügbar
   benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }

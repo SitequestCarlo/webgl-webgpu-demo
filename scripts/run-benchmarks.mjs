@@ -9,6 +9,14 @@
  * Aufruf:
  *   npm run benchmark
  *   BASE_URL=http://localhost:5173 npm run benchmark
+ *   BROWSER_CHANNEL=chrome npm run benchmark   (System-Chrome; Default)
+ *   BROWSER_CHANNEL= npm run benchmark          (gebündeltes Playwright-Chromium)
+ *
+ * WICHTIG (GPU): Das gebündelte Playwright-Chromium fällt für WebGPU auf einen
+ *   Software-Adapter (SwiftShader) zurück → WebGPU wirkt dramatisch langsamer.
+ *   Daher wird standardmäßig das SYSTEM-Chrome verwendet (channel: 'chrome') und
+ *   Vulkan aktiviert. Die Adapter-Zeilen im Log ([WebGPU] adapter / [WebGL] renderer)
+ *   zeigen, ob beide APIs dieselbe echte GPU nutzen.
  *
  * Ausgabe:
  *   benchmark-results/<showcase-id>.csv   (je Showcase)
@@ -24,7 +32,8 @@
  */
 
 import { chromium } from 'playwright';
-import { writeFileSync, mkdirSync, existsSync, createWriteStream } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, createWriteStream, readFileSync } from 'fs';
+import os from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -32,6 +41,72 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT        = join(__dirname, '..');
 const RESULTS_DIR = join(ROOT, 'benchmark-results');
 const BASE_URL    = process.env.BASE_URL ?? 'http://localhost:5173';
+
+// ---------------------------------------------------------------------------
+// System-Info (einmalig zu Beginn geloggt: OS, CPU, RAM, GPU, Browser-Version)
+// ---------------------------------------------------------------------------
+
+/** @param {import('playwright').Browser} browser */
+async function logSystemInfo(browser) {
+  const line = '\u2500'.repeat(60);
+  console.log(`\n${line}\n  SYSTEM\n${line}`);
+
+  // OS (auf Linux zusätzlich die Distro aus /etc/os-release)
+  let osName = `${os.type()} ${os.release()} (${os.arch()})`;
+  try {
+    const m = readFileSync('/etc/os-release', 'utf8').match(/PRETTY_NAME="?([^"\n]+)"?/);
+    if (m) osName = `${m[1]}  —  ${os.type()} ${os.release()} (${os.arch()})`;
+  } catch { /* nicht-Linux */ }
+  console.log(`  OS:        ${osName}`);
+
+  const cpus = os.cpus();
+  console.log(`  CPU:       ${(cpus[0]?.model ?? '?').trim()}  (${cpus.length} threads)`);
+  console.log(`  RAM:       ${(os.totalmem() / 1024 ** 3).toFixed(1)} GiB`);
+  console.log(`  Node:      ${process.version}`);
+  try {
+    console.log(`  Browser:   ${browser.browserType().name()} ${browser.version()}  (channel: ${process.env.BROWSER_CHANNEL ?? 'chrome'})`);
+  } catch { /* ignore */ }
+
+  // GPU-Identität über die Browser-Adapter abfragen (die relevante GPU für die Messung)
+  try {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    const gpu = await page.evaluate(async () => {
+      /** @type {{webgpu: any, webgl: any}} */
+      const out = { webgpu: null, webgl: null };
+      try {
+        const a = await navigator.gpu?.requestAdapter?.({ powerPreference: 'high-performance' });
+        if (a) {
+          const i = a.info ?? {};
+          out.webgpu = {
+            vendor: i.vendor, architecture: i.architecture, description: i.description,
+            fallback: !!(a.isFallbackAdapter || i.isFallbackAdapter),
+          };
+        }
+      } catch { /* ignore */ }
+      try {
+        const gl = document.createElement('canvas').getContext('webgl2');
+        const dbg = gl && gl.getExtension('WEBGL_debug_renderer_info');
+        if (dbg) out.webgl = {
+          vendor: gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL),
+          renderer: gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL),
+        };
+      } catch { /* ignore */ }
+      return out;
+    });
+    if (gpu.webgpu) {
+      console.log(`  GPU WebGPU: ${gpu.webgpu.vendor} / ${gpu.webgpu.architecture} — ${gpu.webgpu.description}${gpu.webgpu.fallback ? '  ⚠ FALLBACK/SOFTWARE' : ''}`);
+    } else {
+      console.log('  GPU WebGPU: (nicht verfügbar)');
+    }
+    console.log(`  GPU WebGL:  ${gpu.webgl ? `${gpu.webgl.vendor} — ${gpu.webgl.renderer}` : '(nicht verfügbar)'}`);
+    await ctx.close();
+  } catch (e) {
+    console.log(`  GPU:       (Abfrage fehlgeschlagen: ${e.message})`);
+  }
+  console.log(line);
+}
 
 // ---------------------------------------------------------------------------
 // Showcase-Konfiguration
@@ -219,8 +294,6 @@ async function runOnePage(page, param, n) {
     }),
   );
 
-  await setParam(page, param, n);
-  // Benchmark-Button per Text finden und klicken (via evaluate, unabhängig von ARIA-Rollen)
   await page.evaluate(() => {
     const allBtns = document.querySelectorAll('button');
     for (const btn of allBtns) {
@@ -238,14 +311,39 @@ async function runOnePage(page, param, n) {
 async function main() {
   if (!existsSync(RESULTS_DIR)) mkdirSync(RESULTS_DIR, { recursive: true });
 
+  // System-Chrome bevorzugen (echte GPU/Vulkan). Mit BROWSER_CHANNEL="" auf das
+  // gebündelte Playwright-Chromium zurückfallen.
+  const CHANNEL = process.env.BROWSER_CHANNEL ?? 'chrome';
+
+  // GPU-Backend plattformabhängig: Chrome nutzt standardmäßig Direct3D (Windows)
+  // bzw. Metal (macOS) und wählt dort die echte GPU. Nur unter Linux ist der
+  // Dawn-/ANGLE-Default problematisch (Software-Fallback), deshalb dort explizit
+  // Vulkan erzwingen. Mit GPU_BACKEND=vulkan|none lässt sich das überschreiben.
+  const platform = os.platform(); // 'linux' | 'win32' | 'darwin'
+  const backend = process.env.GPU_BACKEND ?? (platform === 'linux' ? 'vulkan' : 'default');
+  const backendArgs =
+    backend === 'vulkan'
+      ? ['--enable-features=Vulkan', '--ignore-gpu-blocklist']
+      : backend === 'none'
+        ? []
+        : ['--ignore-gpu-blocklist']; // 'default': Chrome-Backend behalten (D3D/Metal), nur Blocklist ignorieren
+  console.log(`  GPU-Backend: ${backend} (${platform}) → ${backendArgs.join(' ') || '(Chrome-Default)'}`);
+
   const browser = await chromium.launch({
     headless: false,   // GPU-Rendering erfordert sichtbares Fenster
+    ...(CHANNEL ? { channel: CHANNEL } : {}),
     args: [
       '--disable-frame-rate-limit',
       '--disable-gpu-vsync',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
+      // Reduziert Mess-Rauschen: deaktiviert diverse Hintergrund-/Varianzquellen.
+      '--enable-benchmarking',
       '--enable-unsafe-webgpu',
+      // Hebt die 100-µs-Quantisierung der WebGPU-Timestamps auf (greggman/webgpufundamentals).
+      '--enable-webgpu-developer-features',
+      // Echte GPU statt Software-Fallback erzwingen — Backend je nach OS (s. oben):
+      ...backendArgs,
     ],
   });
 
@@ -265,6 +363,8 @@ async function main() {
   process.stdout.write = tee(origStdout);
   process.stderr.write = tee(origStderr);
   console.log(`  Log: ${logPath}`);
+
+  await logSystemInfo(browser);
 
   try {
     for (const showcase of SHOWCASES) {
@@ -288,14 +388,16 @@ async function main() {
           page.on('console', (msg) => {
             const t = msg.type();
             const txt = msg.text();
-            if (t === 'warning' || t === 'error' || txt.includes('[GpuTimer]') || txt.includes('[GlTimer]')) {
+            if (t === 'warning' || t === 'error' || txt.includes('[GpuTimer]') || txt.includes('[GlTimer]') || txt.includes('[WebGPU]') || txt.includes('[WebGL]')) {
               console.log(`      \u2937 page:${t} ${txt}`);
             }
           });
           page.on('pageerror', (e) => console.log(`      \u2937 pageerror ${e.message}`));
 
           try {
-            await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
+            // Wert direkt über Query-Param setzen (?v=) – kein lil-gui-Slider-Setzen mehr,
+            // das bei großen N-Werten langsam/fragil war und die Messung verfälschte.
+            await page.goto(`${url}?v=${n}`, { waitUntil: 'networkidle', timeout: 30_000 });
             // stats.js erzeugt 3 weitere <canvas>-Elemente — #gl ist eindeutig der Render-Canvas
             await page.locator('#gl').waitFor({ state: 'visible', timeout: 15_000 });
             // Warten bis die Render-Loop tatsächlich läuft (WebGPU-Device-Init ist async).

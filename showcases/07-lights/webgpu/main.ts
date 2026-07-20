@@ -14,7 +14,7 @@ import {
   mat3ToMat4Array, VERTEX_BUFFER_LAYOUT, makeRenderPassDescriptor, GpuTimer,
 } from "../../../src/shared/webgpu";
 import { createUvSphere } from "../../../src/shared/geometry";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import ML_WGSL from "../shaders/gpu/multi-light.wgsl?raw";
 
 // ---------------------------------------------------------------------------
@@ -111,11 +111,11 @@ let depth = createDepthTexture(device, 1, 1);
 // 6. GUI & Benchmark
 // ---------------------------------------------------------------------------
 
-const params = { numLights: 16, autoRotate: true };
+const params = { numLights: readBenchmarkValue() ?? 16, autoRotate: true };
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
 const gpuTimer  = new GpuTimer(device);
 const cpuTimer  = new CpuTimer();
 
@@ -142,7 +142,7 @@ gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PN
 let angle = 0;
 let lastT = performance.now();
 
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   const dt = (now - lastT) / 1000; lastT = now;
 
   // Canvas-Resize: Tiefentextur neu erstellen + Projektion anpassen
@@ -217,8 +217,10 @@ function render(now: number): void {
     }, 'image/png');
   }
 
+  if (benchmark.isRunning) await device.queue.onSubmittedWorkDone(); // Drain (yield) → Timestamp-Readback fertig
+  const gpuMs = gpuTimer.takeSample() ?? undefined;
   stats.update();
-  benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
+  benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

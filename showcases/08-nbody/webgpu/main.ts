@@ -10,7 +10,7 @@ import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4 } from "gl-matrix";
 import { getWebGPU, resizeWebGPUCanvas, GpuTimer } from "../../../src/shared/webgpu";
-import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer } from "../../../src/shared/benchmark";
+import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import NBODY_COMPUTE from "../shaders/gpu/simulate.wgsl?raw";
 import NBODY_RENDER  from "../shaders/gpu/render.wgsl?raw";
 
@@ -103,11 +103,11 @@ function rebuild(n: number): void {
 
 // --- GUI ---------------------------------------------------------------------
 
-const params = { N: 512, dt: 0.002, softening: 0.1 };
+const params = { N: readBenchmarkValue() ?? 512, dt: 0.002, softening: 0.1 };
 rebuild(params.N);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 3000, minFrames: 60 });
+const benchmark = new BenchmarkRun({ warmupMs: 800, measureMs: 4000, minFrames: 120 });
 const gpuTimer = new GpuTimer(device);
 const cpuTimer = new CpuTimer();
 
@@ -130,7 +130,7 @@ mat4.lookAt(view4, [0, 4, 12], [0, 0, 0], [0, 1, 0]);
 const renderUData = new Float32Array(20); // mat4(16) + n(1) + pad(3)
 
 let flip = 0;
-function render(now: number): void {
+async function render(now: number): Promise<void> {
   if (resizeWebGPUCanvas(canvas)) {
     mat4.perspective(proj4, Math.PI/3.6, canvas.width/Math.max(1,canvas.height), 0.01, 200);
     mat4.multiply(viewProj, proj4, view4);
@@ -179,7 +179,9 @@ function render(now: number): void {
       a.href = URL.createObjectURL(b); a.download = 'nbody-webgpu.png'; a.click();
     }, 'image/png');
   }
-  stats.update(); benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
+  if (benchmark.isRunning) await device.queue.onSubmittedWorkDone(); // Drain (yield) → Timestamp-Readback fertig
+  const gpuMs = gpuTimer.takeSample() ?? undefined;
+  stats.update(); benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 
