@@ -24,24 +24,13 @@ for (int i = 0; i < 8; i++) {
 
 Ab ~1M Dreiecken mit Heavy VS wird die GPU **vertex-bound** — die GPU-Zeit steigt sichtbar.
 
-## GPU-Timing
+## GPU-Timing (Live-Anzeige im GUI)
 
 | API | Methode | Genauigkeit |
 |---|---|---|
 | WebGL2 | `gl.finish()` nach `drawElements()` | ~1ms |
 | WebGPU | `timestamp-query` Feature | ~0.001ms (ns) |
 
-Die `timestamp-query` Methode ist asynchron und blockiert den Render-Loop nicht.
-
-## Messung
-
-Die Messung erfolgt manuell über den GUI-Button **„Benchmark starten"** für den
-aktuell eingestellten Parameter (Warmup + feste Anzahl Mess-Frames). Das Ergebnis
-erscheint als Overlay; ausgewertet werden u.a. Median und p95 der Frametimes.
-
-### Reproduzierbarkeit
-
-Die `requestAnimationFrame`-Frametime ist nur unter **deaktiviertem VSync und
-aufgehobenem Frame-Limit** aussagekräftig, sonst werden Zeiten unter 8,33 ms
-(120 Hz) auf die Bildwiederholrate geklemmt. Getestet mit Chrome unter
-`--disable-frame-rate-limit --disable-gpu-vsync`.
+Da WebGL `gl.finish()` vor `benchmark.sample()` aufruft, spiegelt die gemessene
+Frame-Zeit die echte GPU-Zeit wider. Weitere Details zur Messmethodik im
+[Projekt-README](../../README.md#benchmark-methodik).

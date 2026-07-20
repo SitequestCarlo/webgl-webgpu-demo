@@ -37,15 +37,5 @@ for (var i = 0u; i < scene.numLights; i++) { ... }
 Storage Buffer können auch von Compute-Shadern beschrieben werden — die Basis für
 GPU-seitige Lichtverwaltung (z.B. Clustered Shading).
 
-## Messung
-
-Die Messung erfolgt manuell über den GUI-Button **„Benchmark starten"** für den
-aktuell eingestellten Parameter (Warmup + feste Anzahl Mess-Frames). Das Ergebnis
-erscheint als Overlay; ausgewertet werden u.a. Median und p95 der Frametimes.
-
-### Reproduzierbarkeit
-
-Die `requestAnimationFrame`-Frametime ist nur unter **deaktiviertem VSync und
-aufgehobenem Frame-Limit** aussagekräftig, sonst werden Zeiten unter 8,33 ms
-(120 Hz) auf die Bildwiederholrate geklemmt. Getestet mit Chrome unter
-`--disable-frame-rate-limit --disable-gpu-vsync`.
+> Zur allgemeinen Messmethodik (BenchmarkRun, VSync-Anforderung, Timing-Semantik)
+> siehe das [Projekt-README](../../README.md#benchmark-methodik).

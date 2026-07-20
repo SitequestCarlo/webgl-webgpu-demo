@@ -61,24 +61,24 @@ export interface ShowcaseEntry {
 // ---------------------------------------------------------------------------
 const shaderSources = import.meta.glob<string>(
   '/showcases/**/shaders/**/*.{glsl,wgsl}',
-  { as: 'raw', eager: true },
+  { query: '?raw', eager: true, import: 'default' },
 );
 
 // main.ts-Quellen für den Code-Viewer
 const mainTsSources = import.meta.glob<string>(
   '/showcases/**/main.ts',
-  { as: 'raw', eager: true },
+  { query: '?raw', eager: true, import: 'default' },
 );
 
 const descriptionFiles = import.meta.glob<string>(
   '/showcases/*/description.md',
-  { as: 'raw', eager: true },
+  { query: '?raw', eager: true, import: 'default' },
 );
 
 // Globale README.md (Projekt-Root)
 const globalReadme = import.meta.glob<string>(
   '/README.md',
-  { as: 'raw', eager: true },
+  { query: '?raw', eager: true, import: 'default' },
 );
 
 type Api = 'webgl' | 'webgpu';
@@ -229,7 +229,6 @@ function buildSidebar(): void {
     btn.className = 'sidebar-item sidebar-readme';
     btn.dataset.id = readmeEntry.id;
     btn.innerHTML = `
-      <span class="sidebar-num">${readmeEntry.num}</span>
       <span class="sidebar-title">${readmeEntry.title}</span>`;
     btn.addEventListener('click', () => navigate(readmeEntry.id));
     sidebarList.appendChild(btn);
@@ -314,11 +313,30 @@ function navigate(id: string): void {
   // Dateien laden (README.md + Shader)
   currentFiles      = getFiles(entry, currentApi);
   selectedFileIndex = 0;
-  renderFileList(currentFiles);
-  if (currentFiles.length > 0) selectFile(0);
-  else {
-    fileListEl.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:.78rem">Keine Dateien vorhanden.</div>';
-    codeBlock.textContent = '';
+  const hasCodeFiles = currentFiles.some(f => f.language !== 'markdown');
+
+  if (!hasCodeFiles && currentFiles.length > 0) {
+    // Nur Markdown (z.B. globale README): Dateiliste ausblenden, Inhalt direkt rendern
+    fileListEl.style.display = 'none';
+    fileListEl.innerHTML = '';
+    const pre = codeView.querySelector('pre')!;
+    pre.style.display = 'none';
+    let mdDiv = codeView.querySelector<HTMLDivElement>('.md-view');
+    if (!mdDiv) {
+      mdDiv = document.createElement('div');
+      mdDiv.className = 'md-view';
+      codeView.appendChild(mdDiv);
+    }
+    mdDiv.style.display = 'block';
+    mdDiv.innerHTML = marked.parse(currentFiles[0].content) as string;
+  } else {
+    fileListEl.style.display = '';
+    renderFileList(currentFiles);
+    if (currentFiles.length > 0) selectFile(0);
+    else {
+      fileListEl.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:.78rem">Keine Dateien vorhanden.</div>';
+      codeBlock.textContent = '';
+    }
   }
 
   // API-Warnung (falls man manuell auf eine nicht verfuegbare API umschaltet)
