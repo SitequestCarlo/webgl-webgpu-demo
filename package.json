@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "benchmark": "node scripts/run-benchmarks.mjs"
+    "benchmark": "node scripts/run-benchmarks.mjs",
+    "chart": "node scripts/make-chart-data.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",

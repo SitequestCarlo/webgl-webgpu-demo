@@ -36,6 +36,9 @@ export interface BenchmarkResult {
   cpu?: SampleStats;
   gpu?: SampleStats;
   frame: SampleStats;
+  // Anzahl gesammelter Einzelsamples je Dimension (Diagnose: 0 GPU-Samples ⇒ Timestamp-Pfad defekt).
+  cpuCount: number;
+  gpuCount: number;
 }
 
 export interface BenchmarkOptions {
@@ -202,6 +205,8 @@ export class BenchmarkRun {
       cpu,
       gpu,
       frame,
+      cpuCount: this.cpuSamples.length,
+      gpuCount: this.gpuSamples.length,
     };
     this.resolveFn?.(result);
     this.resolveFn = null;

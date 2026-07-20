@@ -24,7 +24,7 @@
  */
 
 import { chromium } from 'playwright';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, createWriteStream } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -253,6 +253,19 @@ async function main() {
   const allCsvRows = [];
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
+  // Gesamte Konsolenausgabe zusätzlich in eine Logdatei schreiben (Diagnose dauerhaft festhalten).
+  const logPath = join(RESULTS_DIR, `benchmark-log-${timestamp}.log`);
+  const logStream = createWriteStream(logPath, { flags: 'a' });
+  const origStdout = process.stdout.write.bind(process.stdout);
+  const origStderr = process.stderr.write.bind(process.stderr);
+  const tee = (orig) => (chunk, ...rest) => {
+    try { logStream.write(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')); } catch { /* ignore */ }
+    return orig(chunk, ...rest);
+  };
+  process.stdout.write = tee(origStdout);
+  process.stderr.write = tee(origStderr);
+  console.log(`  Log: ${logPath}`);
+
   try {
     for (const showcase of SHOWCASES) {
       console.log(`\n${'='.repeat(60)}`);
@@ -270,6 +283,16 @@ async function main() {
           // Eigener Browser-Context pro Messung → keine GPU-State-Überreste
           const ctx  = await browser.newContext({ viewport: { width: 1280, height: 720 } });
           const page = await ctx.newPage();
+
+          // Diagnose (Punkt 1): Timer-Warnungen aus der Seite in die Node-Konsole spiegeln.
+          page.on('console', (msg) => {
+            const t = msg.type();
+            const txt = msg.text();
+            if (t === 'warning' || t === 'error' || txt.includes('[GpuTimer]') || txt.includes('[GlTimer]')) {
+              console.log(`      \u2937 page:${t} ${txt}`);
+            }
+          });
+          page.on('pageerror', (e) => console.log(`      \u2937 pageerror ${e.message}`));
 
           try {
             await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
@@ -293,7 +316,8 @@ async function main() {
               `[${result.metric ?? 'frame'}]  ` +
               `avg ${result.avgMs.toFixed(2)} ms  ` +
               `med ${result.medMs.toFixed(2)} ms  ` +
-              `p95 ${result.p95Ms.toFixed(2)} ms`,
+              `p95 ${result.p95Ms.toFixed(2)} ms  ` +
+              `(cpu ${result.cpuCount ?? 0} / gpu ${result.gpuCount ?? 0} samples)`,
             );
           } catch (err) {
             console.log(`FEHLER: ${err.message}`);
@@ -321,6 +345,11 @@ async function main() {
     console.log('='.repeat(60));
   } finally {
     await browser.close();
+    console.log(`  Log gespeichert: ${logPath}`);
+    // stdout/stderr wiederherstellen und Logdatei sauber schließen
+    process.stdout.write = origStdout;
+    process.stderr.write = origStderr;
+    await new Promise((res) => logStream.end(res));
   }
 }
 

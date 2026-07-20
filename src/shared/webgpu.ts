@@ -150,9 +150,20 @@ export class GpuTimer {
   private results: number[] = [];
   private lastMsValue = 0;
 
+  // Diagnose-Zähler (Punkt 1): decken auf, warum GPU-Timestamps ggf. keine Samples liefern.
+  private nSubmitted = 0;   // resolveQuerySet + Readback eingereicht
+  private nResolved = 0;    // Readback fertig, gültiger Messwert
+  private nDropped = 0;     // Staging-Pool leer → Frame übersprungen
+  private nRejected = 0;    // mapAsync abgelehnt
+  private nInvalid = 0;     // ns-Differenz < 0 oder NaN
+  private warnedReject = false;
+
   constructor(device: GPUDevice, poolSize = 4) {
     this.enabled = device.features.has("timestamp-query");
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      console.warn("[GpuTimer] timestamp-query nicht unterstützt – keine GPU-Zeitmessung.");
+      return;
+    }
     this.querySet = device.createQuerySet({ type: "timestamp", count: 2 });
     this.resolveBuf = device.createBuffer({
       size: 16,
@@ -190,7 +201,8 @@ export class GpuTimer {
   /** Nach dem Aufzeichnen aller Passes, VOR encoder.finish(): Query auflösen. */
   resolve(encoder: GPUCommandEncoder): void {
     this.pending = undefined;
-    if (!this.enabled || this.freeBufs.length === 0) return;
+    if (!this.enabled) return;
+    if (this.freeBufs.length === 0) { this.nDropped++; return; }
     const buf = this.freeBufs.pop()!;
     encoder.resolveQuerySet(this.querySet!, 0, 2, this.resolveBuf!, 0);
     encoder.copyBufferToBuffer(this.resolveBuf!, 0, buf, 0, 16);
@@ -202,6 +214,7 @@ export class GpuTimer {
     if (!this.enabled || !this.pending) return;
     const buf = this.pending;
     this.pending = undefined;
+    this.nSubmitted++;
     buf.mapAsync(GPUMapMode.READ).then(() => {
       const t = new BigInt64Array(buf.getMappedRange());
       const ms = Number(t[1] - t[0]) / 1_000_000; // ns → ms
@@ -209,9 +222,19 @@ export class GpuTimer {
       if (Number.isFinite(ms) && ms >= 0) {
         this.results.push(ms);
         this.lastMsValue = ms;
+        this.nResolved++;
+      } else {
+        this.nInvalid++;
       }
       this.freeBufs.push(buf);
-    }).catch(() => { this.freeBufs.push(buf); });
+    }).catch((e) => {
+      this.nRejected++;
+      if (!this.warnedReject) {
+        this.warnedReject = true;
+        console.warn("[GpuTimer] mapAsync abgelehnt – GPU-Timestamps unzuverlässig:", e);
+      }
+      this.freeBufs.push(buf);
+    });
   }
 
   /** Neuesten fertigen GPU-Messwert (ms) liefern und Puffer leeren; null falls keiner. */
@@ -225,5 +248,17 @@ export class GpuTimer {
   /** Zuletzt gemessene GPU-Zeit (ms) für die Live-Anzeige. */
   get lastMs(): number {
     return this.lastMsValue;
+  }
+
+  /** Diagnose-Schnappschuss (Punkt 1): wie viele Readbacks eingereicht/aufgelöst/verworfen wurden. */
+  get diagnostics(): { enabled: boolean; submitted: number; resolved: number; dropped: number; rejected: number; invalid: number } {
+    return {
+      enabled: this.enabled,
+      submitted: this.nSubmitted,
+      resolved: this.nResolved,
+      dropped: this.nDropped,
+      rejected: this.nRejected,
+      invalid: this.nInvalid,
+    };
   }
 }

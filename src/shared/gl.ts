@@ -117,6 +117,13 @@ export class GlTimer {
   private active: WebGLQuery | null = null;
   private lastMsValue = 0;
 
+  // Diagnose-Zähler (Punkt 1).
+  private nSubmitted = 0;  // beginQuery/endQuery-Paare gestartet
+  private nResolved = 0;   // gültiges Ergebnis ausgelesen
+  private nDropped = 0;    // Query-Pool leer → Frame übersprungen
+  private nDisjoint = 0;   // GPU_DISJOINT → laufende Messungen verworfen
+  private warnedDisjoint = false;
+
   constructor(gl: WebGL2RenderingContext, poolSize = 4) {
     this.gl = gl;
     this.ext = gl.getExtension("EXT_disjoint_timer_query_webgl2") as {
@@ -124,7 +131,10 @@ export class GlTimer {
       GPU_DISJOINT_EXT: number;
     } | null;
     this.enabled = this.ext !== null;
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      console.warn("[GlTimer] EXT_disjoint_timer_query_webgl2 nicht unterstützt – keine GPU-Zeitmessung.");
+      return;
+    }
     for (let i = 0; i < poolSize; i++) {
       const q = gl.createQuery();
       if (q) this.free.push(q);
@@ -133,7 +143,8 @@ export class GlTimer {
 
   /** Vor den zu messenden Draw-Calls. */
   begin(): void {
-    if (!this.enabled || this.active || this.free.length === 0) return;
+    if (!this.enabled || this.active) return;
+    if (this.free.length === 0) { this.nDropped++; return; }
     this.active = this.free.pop()!;
     this.gl.beginQuery(this.ext!.TIME_ELAPSED_EXT, this.active);
   }
@@ -144,6 +155,7 @@ export class GlTimer {
     this.gl.endQuery(this.ext!.TIME_ELAPSED_EXT);
     this.inflight.push(this.active);
     this.active = null;
+    this.nSubmitted++;
     this.poll();
   }
 
@@ -153,6 +165,11 @@ export class GlTimer {
     const disjoint = gl.getParameter(this.ext!.GPU_DISJOINT_EXT) as boolean;
     if (disjoint) {
       // GPU hat den Takt gewechselt → alle laufenden Messungen sind ungültig.
+      this.nDisjoint++;
+      if (!this.warnedDisjoint) {
+        this.warnedDisjoint = true;
+        console.warn("[GlTimer] GPU_DISJOINT – Messungen verworfen (GPU-Taktwechsel/DVFS).");
+      }
       for (const q of this.inflight) this.free.push(q);
       this.inflight.length = 0;
       return;
@@ -166,6 +183,7 @@ export class GlTimer {
       if (Number.isFinite(ms) && ms >= 0) {
         this.results.push(ms);
         this.lastMsValue = ms;
+        this.nResolved++;
       }
       this.inflight.shift();
       this.free.push(q);
@@ -184,5 +202,16 @@ export class GlTimer {
   /** Zuletzt gemessene GPU-Zeit (ms) für die Live-Anzeige. */
   get lastMs(): number {
     return this.lastMsValue;
+  }
+
+  /** Diagnose-Schnappschuss (Punkt 1). */
+  get diagnostics(): { enabled: boolean; submitted: number; resolved: number; dropped: number; disjoint: number } {
+    return {
+      enabled: this.enabled,
+      submitted: this.nSubmitted,
+      resolved: this.nResolved,
+      dropped: this.nDropped,
+      disjoint: this.nDisjoint,
+    };
   }
 }
