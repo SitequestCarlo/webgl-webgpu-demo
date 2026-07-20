@@ -12,7 +12,7 @@ void main(){vec4 w=uModel*vec4(aPosition,1.0);vWorldPos=w.xyz;vNormal=uNormalMat
 // MAX_LIGHTS wird beim Compile ersetzt (siehe buildFragShader() in shaders.ts)
 #version 300 es
 precision highp float;
-#define MAX_LIGHTS 1024
+#define MAX_LIGHTS 256
 in vec3 vWorldPos,vNormal;
 uniform vec3 uViewPos; uniform float uAmbient,uShininess; uniform int uNumLights;
 uniform vec3 uLightPos[MAX_LIGHTS];    // Array fester Größe – WebGL-Limitation

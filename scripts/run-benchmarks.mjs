@@ -183,7 +183,7 @@ const SHOWCASES = [
     param: {
       role: 'spinbutton',
       label: 'Lichtquellen',
-      values: [8, 16, 32, 64, 128, 256, 512, 1024],
+      values: [8, 16, 32, 64, 128, 256],
     },
   },
   {

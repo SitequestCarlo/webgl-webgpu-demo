@@ -20,8 +20,11 @@ import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
 // Konstante & Shader-Vorbereitung
 // ---------------------------------------------------------------------------
 
-/** Maximale Lichtanzahl — compile-time Grenze des GLSL-Arrays. */
-const MAX_LIGHTS = 1024;
+/** Maximale Lichtanzahl — compile-time Grenze des GLSL-Arrays.
+ * WebGL2-Limit: 2×MAX_LIGHTS vec3-Uniforms müssen in MAX_FRAGMENT_UNIFORM_VECTORS passen.
+ * Bei 1024 vec4-Slots (Minimum-Garantie) und 2 Arrays à N vec4 bleiben ~500 nutzbar.
+ * → In der Praxis sicherer Wert: 256. */
+const MAX_LIGHTS = 256;
 
 // Shader aus einer kombinierten GLSL-Datei aufteilen (VS || FS, getrennt durch #version)
 const [ML_VS_GLSL, ML_FS_GLSL] = splitGLSL(multiLightGlsl);
@@ -42,7 +45,7 @@ gl.clearColor(0.02, 0.02, 0.04, 1);
 // 2. Shader-Programm
 // ---------------------------------------------------------------------------
 
-// Shader einmalig mit MAX_LIGHTS=1024 kompilieren.
+// Shader einmalig mit MAX_LIGHTS=256 kompilieren.
 // uNumLights steuert zur Laufzeit, wie viele der 256 Slots aktiv sind.
 const program = createProgram(gl, ML_VS_GLSL, ML_FS_GLSL);
 const U = getUniforms(gl, program, [
