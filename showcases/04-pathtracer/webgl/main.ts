@@ -1,3 +1,7 @@
+// Path-Tracer Showcase – WebGL2
+// Akkumulierender Path-Tracer: jeder Frame addiert einen neuen Sample
+// zum selben Canvas (preserveDrawingBuffer + Alpha-Blending).
+// Vergleich mit Whitted-Raytracing und naivem Path-Tracing (ohne NEE).
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { vec3 } from "gl-matrix";
@@ -81,14 +85,21 @@ function resetAccum(): void {
   gl.clear(gl.COLOR_BUFFER_BIT);
 }
 
+// Maus-Orbit: Drag dreht die Kamera, Scroll-Rad zoomt
 {
   let dragging = false, lx = 0, ly = 0;
-  canvas.addEventListener("pointerdown", (e) => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    lx = e.clientX;
+    ly = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     orbit.theta -= (e.clientX - lx) * 0.008;
     orbit.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, orbit.phi - (e.clientY - ly) * 0.008));
-    lx = e.clientX; ly = e.clientY;
+    lx = e.clientX;
+    ly = e.clientY;
     resetAccum();
   });
   canvas.addEventListener("pointerup", () => { dragging = false; });
@@ -203,7 +214,11 @@ function render(now: number): void {
 
   frameIndex++;
 
-  if (pendingCapture) { pendingCapture = false; captureWebp(); }
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    captureWebp();
+  }
   stats.update();
   benchmark.sample(now);
   requestAnimationFrame(render);

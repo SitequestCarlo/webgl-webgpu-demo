@@ -1,3 +1,6 @@
+// Raytracer Showcase – WebGL2
+// Vergleicht Fragment-Shader-Raytracing (Whitted) mit Blinn-Phong-Rasterisierung.
+// Die Geometrie (3 Kugeln + Schachbrettboden) ist in beiden Modi identisch.
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { mat4, mat3 } from "gl-matrix";
@@ -146,15 +149,21 @@ function orbitCamPos(): [number, number, number] {
   ];
 }
 
-// Maus-Orbit
+// Maus-Orbit: Drag dreht die Kamera, Scroll-Rad zoomt
 {
   let dragging = false, lastX = 0, lastY = 0;
-  canvas.addEventListener("pointerdown", (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     orbit.theta -= (e.clientX - lastX) * 0.008;
     orbit.phi    = Math.max(0.05, Math.min(Math.PI - 0.05, orbit.phi - (e.clientY - lastY) * 0.008));
-    lastX = e.clientX; lastY = e.clientY;
+    lastX = e.clientX;
+    lastY = e.clientY;
   });
   canvas.addEventListener("pointerup", () => { dragging = false; });
   canvas.addEventListener("wheel", (e) => {
@@ -263,7 +272,11 @@ function render(now: number): void {
     gl.bindVertexArray(null);
   }
 
-  if (pendingCapture) { pendingCapture = false; captureWebp(); }
+  // Screenshot-Trigger (einmalig nach Button-Klick)
+  if (pendingCapture) {
+    pendingCapture = false;
+    captureWebp();
+  }
   stats.update();
   benchmark.sample(now);
   requestAnimationFrame(render);

@@ -1,3 +1,6 @@
+// Raytracer Showcase – WebGPU
+// Vergleicht Compute-Shader-Raytracing mit Rasterisierung (Blinn-Phong).
+// Der Raytracer läuft als Compute-Pass, ein Blit-Pass zeigt das Ergebnis.
 import { GUI } from "lil-gui";
 import '/src/shared/showcase.css';
 import { vec3, mat4, mat3 } from "gl-matrix";
@@ -223,15 +226,21 @@ function resetAccum(): void {
   needsClear = true;
 }
 
-// Maus-Orbit
+// Maus-Orbit: Drag dreht die Kamera, Scroll-Rad zoomt
 {
   let dragging = false, lastX = 0, lastY = 0;
-  canvas.addEventListener("pointerdown", (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     orbit.theta -= (e.clientX - lastX) * 0.008;
     orbit.phi    = Math.max(0.05, Math.min(Math.PI - 0.05, orbit.phi - (e.clientY - lastY) * 0.008));
-    lastX = e.clientX; lastY = e.clientY;
+    lastX = e.clientX;
+    lastY = e.clientY;
     resetAccum();
   });
   canvas.addEventListener("pointerup",    () => { dragging = false; });

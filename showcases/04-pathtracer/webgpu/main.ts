@@ -1,3 +1,8 @@
+// Path-Tracer Showcase – WebGPU
+// Akkumulierender Path-Tracer mit Compute-Shader: jeder Frame dispatcht
+// einen Workgroup-Grid, der neue Samples zum Accumulations-Buffer addiert.
+// Ein separater Blit-Pass tonemappt und zeigt den Buffer an.
+// GPU-Timing via Timestamp-Query (falls unterstützt), sonst CPU-Fallback.
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
 import { vec3 } from "gl-matrix";
@@ -107,14 +112,21 @@ function orbitVectors(): { pos: vec3; fwd: vec3; right: vec3; up: vec3 } {
   return { pos: p, fwd, right, up };
 }
 
+// Maus-Orbit: Drag dreht die Kamera, Scroll-Rad zoomt
 {
   let dragging = false, lx = 0, ly = 0;
-  canvas.addEventListener("pointerdown", (e) => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    lx = e.clientX;
+    ly = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     orbit.theta -= (e.clientX - lx) * 0.008;
     orbit.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, orbit.phi - (e.clientY - ly) * 0.008));
-    lx = e.clientX; ly = e.clientY;
+    lx = e.clientX;
+    ly = e.clientY;
     resetAccum();
   });
   canvas.addEventListener("pointerup", () => { dragging = false; });
