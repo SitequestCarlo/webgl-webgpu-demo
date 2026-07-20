@@ -102,6 +102,9 @@ export class BenchmarkRun {
     };
     this.resolveFn?.(result);
     this.resolveFn = null;
+    // Automatisierungs-Hook: Ergebnis für externen Runner bereitstellen
+    (window as unknown as Record<string, unknown>)['__benchmarkResult'] = result;
+    window.dispatchEvent(new CustomEvent('benchmarkComplete', { detail: result }));
   }
 }
 
