@@ -1,19 +1,17 @@
 // vertex-heavy.glsl – Heavy Vertex Shader: 8 sin/cos-Ops pro Vertex (Showcase 06)
-// Simuliert teure Vertex-Berechnungen (z.B. Skinning, Morphing).
-// Ab ~1M Dreiecken wird die GPU vertex-bound → messbar höhere GPU-Zeit.
+// Skalare Akkumulation identisch zu vertex-heavy.wgsl → fairer WebGL/WebGPU-Vergleich.
 #version 300 es
 precision highp float;
 layout(location=0) in vec3 aPosition; layout(location=1) in vec3 aNormal;
 uniform mat4 uModel,uView,uProj; uniform mat3 uNormalMatrix;
-uniform float uTime;
 out vec3 vWorldPos,vNormal;
 void main(){
-  // Teure Displacement-Berechnung (simuliert Skinning/Morphing)
-  vec3 pos=aPosition;
+  float d=0.0;
   for(int i=0;i<8;i++){
     float fi=float(i+1);
-    pos+=aNormal*sin(aPosition.x*fi+uTime)*cos(aPosition.y*fi+uTime)*sin(aPosition.z*fi+uTime)*0.02;
+    d+=sin(aPosition.x*fi)*cos(aPosition.y*fi)*sin(aPosition.z*fi)*0.02;
   }
+  vec3 pos=aPosition+aNormal*d;
   vec4 w=uModel*vec4(pos,1.0); vWorldPos=w.xyz; vNormal=uNormalMatrix*aNormal;
   gl_Position=uProj*uView*w;
 }

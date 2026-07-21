@@ -36,7 +36,7 @@ function makePipeline(mod: GPUShaderModule): GPURenderPipeline {
 }
 const pipelineSimple = makePipeline(shader);
 const pipelineHeavy  = makePipeline(shaderHeavy);
-let pipeline = pipelineSimple;
+let pipeline = pipelineHeavy;
 
 const sceneUB = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const sceneData = new Float32Array(64);
@@ -66,11 +66,11 @@ function buildMesh(seg: number, rings: number): void {
   indexCount = geo.indexCount; triCount = geo.indexCount / 3;
 }
 
-const params = { segments: readBenchmarkValue() ?? 200, rings: 100, autoRotate: true, heavyVS: false };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true, heavyVS: true };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 1000, measureMs: 1, minFrames: 1000 });
+const benchmark = new BenchmarkRun({ warmupMs: 2500, measureMs: 1, minFrames: 1000 });
 const cpuTimer = new CpuTimer();
 let depth = createDepthTexture(device, 1, 1);
 

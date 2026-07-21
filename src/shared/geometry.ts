@@ -55,16 +55,28 @@ export function createUvSphere(
   segments = Math.max(3, Math.floor(segments));
   rings = Math.max(2, Math.floor(rings));
 
-  const positions: number[] = [];
-  const indices: number[] = [];
+  const cols = segments + 1;
+  const rows = rings + 1;
+  const vertexCount = cols * rows;
+  const indexCount  = segments * rings * 6;
 
-  for (let y = 0; y <= rings; y++) {
+  if (indexCount > 0xffff_ffff) {
+    throw new Error(`createUvSphere: indexCount ${indexCount} überschreitet den Uint32-Bereich.`);
+  }
+
+  // Direkt in typisierte Arrays schreiben (kein number[]-Zwischenpuffer) — erlaubt
+  // sehr große Meshes (z. B. Vertex-Throughput-Benchmark) ohne JS-Heap-Explosion.
+  const vertices = new Float32Array(vertexCount * 6);
+  const indices  = new Uint32Array(indexCount);
+
+  let p = 0;
+  for (let y = 0; y < rows; y++) {
     const v = y / rings;
     const phi = v * Math.PI; // 0 .. PI
     const sinPhi = Math.sin(phi);
     const cosPhi = Math.cos(phi);
 
-    for (let x = 0; x <= segments; x++) {
+    for (let x = 0; x < cols; x++) {
       const u = x / segments;
       const theta = u * Math.PI * 2; // 0 .. 2PI
       const sinTheta = Math.sin(theta);
@@ -75,27 +87,35 @@ export function createUvSphere(
       const nz = sinPhi * sinTheta;
 
       // Position
-      positions.push(nx * radius, ny * radius, nz * radius);
+      vertices[p++] = nx * radius;
+      vertices[p++] = ny * radius;
+      vertices[p++] = nz * radius;
       // Normale (glatt)
-      positions.push(nx, ny, nz);
+      vertices[p++] = nx;
+      vertices[p++] = ny;
+      vertices[p++] = nz;
     }
   }
 
-  const cols = segments + 1;
+  let i = 0;
   for (let y = 0; y < rings; y++) {
     for (let x = 0; x < segments; x++) {
       const a = y * cols + x;
       const b = a + cols;
       // Gegen den Uhrzeigersinn von außen betrachtet -> Normalen zeigen nach außen.
-      indices.push(a, a + 1, b);
-      indices.push(a + 1, b + 1, b);
+      indices[i++] = a;
+      indices[i++] = a + 1;
+      indices[i++] = b;
+      indices[i++] = a + 1;
+      indices[i++] = b + 1;
+      indices[i++] = b;
     }
   }
 
   return {
-    vertices: new Float32Array(positions),
-    indices: new Uint32Array(indices),
-    vertexCount: positions.length / 6,
-    indexCount: indices.length,
+    vertices,
+    indices,
+    vertexCount,
+    indexCount,
   };
 }

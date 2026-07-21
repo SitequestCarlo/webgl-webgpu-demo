@@ -30,21 +30,20 @@ void main(){
   gl_Position=uProj*uView*w;
 }`;
 
-// Heavy VS: zusätzliche teure Berechnungen pro Vertex (Skinning-ähnlich)
+// Heavy VS: 8 sin/cos-Ops pro Vertex, identische Arithmetik zum WGSL-Shader
 const VS_HEAVY = /* glsl */`#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPosition;
 layout(location=1) in vec3 aNormal;
 uniform mat4 uModel,uView,uProj;
 uniform mat3 uNormalMatrix;
-uniform float uTime;
 out vec3 vWorldPos, vNormal;
 void main(){
-  // Teure Displacement-Berechnung pro Vertex
+  // Skalare Akkumulation (identisch zu vertex-heavy.wgsl) → fairer API-Vergleich
   float d=0.0;
   for(int i=0;i<8;i++){
-    d+=sin(aPosition.x*float(i+1)+uTime)*cos(aPosition.y*float(i+1)+uTime)
-      *sin(aPosition.z*float(i+1)+uTime)*0.02;
+    float fi=float(i+1);
+    d+=sin(aPosition.x*fi)*cos(aPosition.y*fi)*sin(aPosition.z*fi)*0.02;
   }
   vec3 pos=aPosition+aNormal*d;
   vec4 w=uModel*vec4(pos,1.0);
@@ -60,9 +59,9 @@ gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.clearColor(0.06, 0.07, 0.0
 const programSimple = createProgram(gl, VS_SIMPLE, BENCH_FS_GLSL);
 const programHeavy  = createProgram(gl, VS_HEAVY,  BENCH_FS_GLSL);
 const uSimple = getUniforms(gl, programSimple, ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess"] as const);
-const uHeavy  = getUniforms(gl, programHeavy,  ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess","uTime"] as const);
-let program = programSimple;
-let U       = uSimple;
+const uHeavy  = getUniforms(gl, programHeavy,  ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess"] as const);
+let program = programHeavy;
+let U       = uHeavy;
 
 const proj = mat4.create(), view = mat4.create(), model = mat4.create(), normalMat = mat3.create();
 const cameraPos = vec3.fromValues(0, 0, 3), lightPos = vec3.fromValues(4, 6, 4);
@@ -86,12 +85,12 @@ function buildMesh(segments: number, rings: number): void {
   gl.bindVertexArray(null);
 }
 
-const params = { segments: readBenchmarkValue() ?? 200, rings: 100, autoRotate: true, heavyVS: false };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true, heavyVS: true };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 1000, measureMs: 1, minFrames: 1000 });
+const benchmark = new BenchmarkRun({ warmupMs: 2500, measureMs: 1, minFrames: 1000 });
 const gpuTimer  = new GlTimer(gl);
 const cpuTimer  = new CpuTimer();
 
@@ -142,7 +141,6 @@ async function render(now: number): Promise<void> {
   gl.uniform3fv(U.uLightColor!, [1, 0.97, 0.93]);
   gl.uniform1f(U.uAmbient!, 0.08);
   gl.uniform1f(U.uShininess!, 48);
-  if (params.heavyVS && U.uTime) gl.uniform1f(U.uTime, now * 0.001);
   // GPU-TIMING: asynchrone Timestamp-Query misst die echte GPU-Zeit dieses
   // Draw-Calls, ohne den CPU-Thread zu blockieren.
   gl.bindVertexArray(currentVao);

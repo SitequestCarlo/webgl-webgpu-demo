@@ -155,11 +155,11 @@ const SHOWCASES = [
       webgpu: 'showcases/06-vertex/webgpu/index.html',
     },
     param: {
-      // "Segmente" steuert die Dreieckzahl; Ringe bleibt auf Standardwert (100)
-      // Bereich so gewählt, dass GPU-Zeit durchgehend 0,5–4 ms liegt (Buffer < 14 MB).
+      // Heavy-VS aktiv (rings=16). Bei N=256000 crasht Chrome durch zu große
+      // GPU-Buffer-Allokation (~194 MB); max. N=128000 (~97 MB) ist stabil.
       role: 'spinbutton',
       label: 'Segmente',
-      values: [2000, 4000, 8000, 16000, 32000],
+      values: [8000, 16000, 32000, 64000, 128000],
     },
   },
   {

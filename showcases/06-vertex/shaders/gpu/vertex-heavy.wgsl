@@ -34,11 +34,13 @@ struct VsOut {
 @vertex
 fn vs_main(@location(0) pos: vec3<f32>, @location(1) norm: vec3<f32>) -> VsOut {
     // Teure Displacement-Berechnung: 8 sin/cos-Paare über alle Achsen.
-    var dpos = pos;
+    // Skalare Akkumulation identisch zur GLSL-Variante → fairer API-Vergleich.
+    var d = 0.0;
     for (var i = 0u; i < 8u; i++) {
         let fi = f32(i + 1u);
-        dpos += norm * (sin(pos.x * fi) * cos(pos.y * fi) * sin(pos.z * fi)) * 0.02;
+        d += sin(pos.x * fi) * cos(pos.y * fi) * sin(pos.z * fi) * 0.02;
     }
+    let dpos = pos + norm * d;
     let world = draw.model * vec4<f32>(dpos, 1.0);
     var o: VsOut;
     o.clip = scene.proj * scene.view * world;
