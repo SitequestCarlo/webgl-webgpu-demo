@@ -8,12 +8,15 @@
  *
  * Aufruf:
  *   npm run benchmark
- *   npm run benchmark -- --only 08         (nur 08-nbody)
- *   npm run benchmark -- --only 07,08      (07 und 08)
- *   npm run benchmark -- --only 08 --api webgpu   (nur WebGPU-Seite von 08)
+ *   npm run benchmark --bench_filter=08              (nur 08-nbody)
+ *   npm run benchmark --bench_filter=07,08           (07 und 08)
+ *   npm run benchmark --bench_filter=08 --bench_api=webgpu
  *   BASE_URL=http://localhost:5173 npm run benchmark
  *   BROWSER_CHANNEL=chrome npm run benchmark   (System-Chrome; Default)
  *   BROWSER_CHANNEL= npm run benchmark          (gebündeltes Playwright-Chromium)
+ *
+ * Alternativ (direkt via node, z. B. aus run-full.mjs):
+ *   node scripts/run-benchmarks.mjs --filter 08 --api webgpu
  *
  * WICHTIG (GPU): Das gebündelte Playwright-Chromium fällt für WebGPU auf einen
  *   Software-Adapter (SwiftShader) zurück → WebGPU wirkt dramatisch langsamer.
@@ -46,16 +49,21 @@ const RESULTS_DIR = join(ROOT, 'benchmark-results');
 const BASE_URL    = process.env.BASE_URL ?? 'http://localhost:5173';
 
 // ---------------------------------------------------------------------------
-// CLI-Filter: --only <id>[,<id>...]  --api webgl|webgpu
+// CLI-Filter: --filter <id>[,<id>...]  --api webgl|webgpu
+// Alternativ via npm_config: npm run benchmark --bench_filter=08 --bench_api=webgpu
 // ---------------------------------------------------------------------------
 
 const argv = process.argv.slice(2);
-const onlyIdx = argv.indexOf('--only');
-const onlyArg = onlyIdx !== -1 ? argv[onlyIdx + 1] : null;
+const onlyIdx = argv.indexOf('--filter');
+const onlyArg = (onlyIdx !== -1 ? argv[onlyIdx + 1] : null)
+             ?? process.env.npm_config_bench_filter
+             ?? null;
 const onlyIds = onlyArg ? onlyArg.split(',').map(s => s.trim()) : null;
 
 const apiIdx = argv.indexOf('--api');
-const apiFilter = apiIdx !== -1 ? argv[apiIdx + 1]?.toLowerCase() : null; // 'webgl'|'webgpu'|null
+const apiFilter = (apiIdx !== -1 ? argv[apiIdx + 1]?.toLowerCase() : null)
+               ?? process.env.npm_config_bench_api?.toLowerCase()
+               ?? null; // 'webgl'|'webgpu'|null
 
 // ---------------------------------------------------------------------------
 // System-Info (einmalig zu Beginn geloggt: OS, CPU, RAM, GPU, Browser-Version)
@@ -404,7 +412,7 @@ async function main() {
       ? SHOWCASES.filter(s => onlyIds.some(id => s.id.includes(id)))
       : SHOWCASES;
     if (onlyIds && activeShowcases.length === 0) {
-      console.log(`  ⚠  Kein Showcase gefunden für --only ${onlyArg}`);
+      console.log(`  ⚠  Kein Showcase gefunden für --filter ${onlyArg}`);
       console.log(`  Verfügbar: ${SHOWCASES.map(s => s.id).join(', ')}`);
     }
     const activeApis = /** @type {('webgl'|'webgpu')[]} */ (

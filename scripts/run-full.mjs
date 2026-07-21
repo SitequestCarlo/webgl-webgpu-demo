@@ -1,13 +1,18 @@
 /**
  * Vollständiger Benchmark-Workflow: N Läufe sequenziell, danach Auswertung.
  *
- * Aufruf:
- *   npm run benchmark:full              (5 Läufe, Standard)
- *   npm run benchmark:full -- --runs 3  (3 Läufe)
- *   npm run benchmark:full -- --only 06 --runs 2
+ * Aufruf (via npm run — keine Flags nach -- nötig):
+ *   npm run benchmark:full                              (5 Läufe, Standard)
+ *   npm run benchmark:full --bench_runs=3               (3 Läufe)
+ *   npm run benchmark:full --bench_filter=06            (nur 06-vertex)
+ *   npm run benchmark:full --bench_filter=06 --bench_runs=2
+ *   npm run benchmark:full --bench_filter=07,08
  *
- * Alle Argumente hinter -- werden 1:1 an run-benchmarks.mjs weitergegeben
- * (außer --runs, das von diesem Skript konsumiert wird).
+ * Alternativ (direkt via node):
+ *   node scripts/run-full.mjs --filter 06 --runs 2
+ *
+ * Alle Argumente werden 1:1 an run-benchmarks.mjs weitergegeben
+ * (--runs bzw. npm_config_bench_runs werden von diesem Skript konsumiert).
  *
  * Nach den Läufen wird automatisch ausgeführt:
  *   make-charts.mjs    → aggregierte Charts + all-benchmarks-agg-*.csv
@@ -28,10 +33,18 @@ const node = process.execPath;
 
 const argv = process.argv.slice(2);
 
+// --runs <n> oder npm run ... --bench_runs=<n>
 const runsIdx = argv.indexOf('--runs');
-const RUNS    = runsIdx !== -1 ? Math.max(1, parseInt(argv[runsIdx + 1], 10) || 5) : 5;
+const runsEnv = process.env.npm_config_bench_runs;
+const RUNS = runsIdx !== -1
+  ? Math.max(1, parseInt(argv[runsIdx + 1], 10) || 5)
+  : runsEnv
+    ? Math.max(1, parseInt(runsEnv, 10) || 5)
+    : 5;
 
-// Alle Argumente außer --runs <n> werden an run-benchmarks.mjs durchgereicht
+// Alle Argumente außer --runs <n> werden an run-benchmarks.mjs durchgereicht.
+// npm_config_bench_filter / npm_config_bench_api werden vom Kindprozess
+// automatisch über die geerbte Umgebung gelesen — kein explizites Forwarding.
 const forwardArgs = argv.filter((a, i) =>
   a !== '--runs' && argv[i - 1] !== '--runs'
 );
@@ -62,6 +75,8 @@ function run(label, script, args = []) {
 
 console.log(`\n${LINE}`);
 console.log(`  benchmark:full  –  ${RUNS} Lauf/Läufe`);
+const filterInfo = process.env.npm_config_bench_filter ?? forwardArgs.find((a, i) => forwardArgs[i - 1] === '--filter');
+if (filterInfo) console.log(`  Filter: ${filterInfo}`);
 if (forwardArgs.length) console.log(`  Weitergeleitete Argumente: ${forwardArgs.join(' ')}`);
 console.log(LINE);
 
