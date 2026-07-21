@@ -1,9 +1,9 @@
-// Multi-Light Showcase – WebGPU
+// Multi-Light Showcase ï¿½ WebGPU
 // Misst Fragment-Shader-Last unter N Punktlichtquellen (Blinn-Phong).
 //
 // WebGPU-spezifisch: Lichtdaten liegen in einem Storage Buffer (kein Limit, kein Recompile).
-// Der Render-Loop schreibt alle N Lichter mit einem einzigen writeBuffer()-Aufruf —
-// unabhängig von N konstanter JS-Overhead (kein pro-Licht JS?Native-Übergang).
+// Der Render-Loop schreibt alle N Lichter mit einem einzigen writeBuffer()-Aufruf ï¿½
+// unabhï¿½ngig von N konstanter JS-Overhead (kein pro-Licht JS?Native-ï¿½bergang).
 
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
@@ -32,7 +32,7 @@ const { device, context, format } = await getWebGPU(canvas);
 // 2. Geometrie
 // ---------------------------------------------------------------------------
 
-// Dichte UV-Kugel (200×100 ˜ 40?k Dreiecke) — Fragment-Last ist das Ziel
+// Dichte UV-Kugel (200ï¿½100 ï¿½ 40?k Dreiecke) ï¿½ Fragment-Last ist das Ziel
 const geo = createUvSphere(1, 200, 100);
 const vb  = createGPUVertexBuffer(device, geo.vertices);
 const ib  = createGPUIndexBuffer(device, geo.indices);
@@ -42,14 +42,14 @@ const ib  = createGPUIndexBuffer(device, geo.indices);
 // ---------------------------------------------------------------------------
 
 // Szene-Uniform-Buffer: Matrizen + Kamera + Material + numLights
-// Layout: 4×mat4 (256B) + 4×vec4 (64B) = 320B ? 512B alloziert (256B-Alignment)
+// Layout: 4ï¿½mat4 (256B) + 4ï¿½vec4 (64B) = 320B ? 512B alloziert (256B-Alignment)
 const SCENE_SIZE = 512;
 const sceneUB   = device.createBuffer({ size: SCENE_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const sceneData = new Float32Array(SCENE_SIZE / 4);
 
-// Light Storage Buffer: MAX_LIGHTS × 32 Bytes (pos:vec4 + col:vec4)
+// Light Storage Buffer: MAX_LIGHTS ï¿½ 32 Bytes (pos:vec4 + col:vec4)
 // Storage Buffer ? kein compile-time Limit, im Fragment-Shader direkt zugreifbar
-const LIGHT_STRIDE = 8; // 2×vec4 = 8 Floats = 32 Bytes
+const LIGHT_STRIDE = 8; // 2ï¿½vec4 = 8 Floats = 32 Bytes
 const lightData = new Float32Array(MAX_LIGHTS * LIGHT_STRIDE);
 const lightBuf  = device.createBuffer({
   size:  MAX_LIGHTS * 32,
@@ -102,7 +102,7 @@ function hsl(h: number, s: number, l: number): [number, number, number] {
   return [r + m, g + m, b + m];
 }
 
-// Lichtfarben einmalig berechnen (unverlndert während der Laufzeit)
+// Lichtfarben einmalig berechnen (unverlndert wï¿½hrend der Laufzeit)
 const lightColors = Array.from({ length: MAX_LIGHTS }, (_, i) => hsl((i / MAX_LIGHTS) * 360, 1, 0.6));
 
 let depth = createDepthTexture(device, 1, 1);
@@ -159,14 +159,14 @@ async function render(now: number): Promise<void> {
 
   const n = Math.round(params.numLights);
 
-  // Swapchain-Textur vor der CPU-Messung holen (Present-Stall zählt nicht als API-Overhead).
+  // Swapchain-Textur vor der CPU-Messung holen (Present-Stall zï¿½hlt nicht als API-Overhead).
   const colorView = context.getCurrentTexture().createView();
 
   // CPU-Messung: alle N Lichter mit EINEM writeBuffer hochladen + Record+Submit.
-  // Gegenstück ist WebGLs N × gl.uniform3f — hier sichtbar als CPU-Overhead-Vergleich.
+  // Gegenstï¿½ck ist WebGLs N ï¿½ gl.uniform3f ï¿½ hier sichtbar als CPU-Overhead-Vergleich.
   cpuTimer.begin();
-  // Licht-Storage-Buffer befüllen: 1 writeBuffer-Aufruf für alle N Lichter —
-  // konstanter JS-Overhead, unabhängig von N (vs. WebGL: N separate gl.uniform3f-Calls).
+  // Licht-Storage-Buffer befï¿½llen: 1 writeBuffer-Aufruf fï¿½r alle N Lichter ï¿½
+  // konstanter JS-Overhead, unabhï¿½ngig von N (vs. WebGL: N separate gl.uniform3f-Calls).
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + angle * 0.5;
     const r = 1.5 + 0.5 * Math.sin(i * 2.3);
@@ -179,7 +179,7 @@ async function render(now: number): Promise<void> {
   }
   device.queue.writeBuffer(lightBuf, 0, lightData.subarray(0, n * LIGHT_STRIDE));
 
-  // Szene-Uniform-Buffer befüllen (Matrizen, Kamera, Material, numLights)
+  // Szene-Uniform-Buffer befï¿½llen (Matrizen, Kamera, Material, numLights)
   sceneData.set(view,  0); sceneData.set(proj, 16); sceneData.set(model, 32); sceneData.set(nm4, 48);
   sceneData[64] = cameraPos[0]; sceneData[65] = cameraPos[1]; sceneData[66] = cameraPos[2];
   sceneData[68] = 0.05;  // ambient
