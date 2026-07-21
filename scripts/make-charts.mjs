@@ -19,6 +19,9 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 
+const CHARTJS_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', 'chart.js', 'dist', 'chart.umd.min.js');
+const CHARTJS_INLINE = readFileSync(CHARTJS_PATH, 'utf8');
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT        = join(__dirname, '..');
 const RESULTS_DIR = join(ROOT, 'benchmark-results');
@@ -109,7 +112,9 @@ function collectRows(filePath) {
   const c   = (name) => hdr.indexOf(name);
   const iSh = c('showcase'), iAp = c('api'), iNn = c('n'), iMe = c('metric');
   const iCM = c('cpuMedMs'), iCP5 = c('cpuP5Ms'), iCP95 = c('cpuP95Ms');
+  const iCT10 = c('cpuTrimMean10Ms'), iCT20 = c('cpuTrimMean20Ms');
   const iGM = c('gpuMedMs'), iGP5 = c('gpuP5Ms'), iGP95 = c('gpuP95Ms');
+  const iGT10 = c('gpuTrimMean10Ms'), iGT20 = c('gpuTrimMean20Ms');
   const out = {};
   for (let i = 1; i < ls.length; i++) {
     const row = ls[i].split(';');
@@ -124,7 +129,9 @@ function collectRows(filePath) {
     out[showcase][api][n].push({
       metric: row[iMe] || 'gpu',
       cpuMed: nf(iCM), cpuP5: nf(iCP5), cpuP95: nf(iCP95),
+      cpuTrimMean10: nf(iCT10), cpuTrimMean20: nf(iCT20),
       gpuMed: nf(iGM), gpuP5: nf(iGP5), gpuP95: nf(iGP95),
+      gpuTrimMean10: nf(iGT10), gpuTrimMean20: nf(iGT20),
     });
   }
   return out;
@@ -156,10 +163,14 @@ for (const [sh, apis] of Object.entries(allRuns)) {
       const m = (key) => arrMedian(rows.map(r => r[key]));
       dataAgg[sh][api][Number(n)] = {
         metric: rows[0].metric,
-        cpuMed:  m('cpuMed'),
+        cpuMed:        m('cpuMed'),
+        cpuTrimMean10: m('cpuTrimMean10'),
+        cpuTrimMean20: m('cpuTrimMean20'),
         cpuP5:   m('cpuP5')  ?? m('cpuMed'),
         cpuP95:  m('cpuP95') ?? m('cpuMed'),
-        gpuMed:  m('gpuMed'),
+        gpuMed:        m('gpuMed'),
+        gpuTrimMean10: m('gpuTrimMean10'),
+        gpuTrimMean20: m('gpuTrimMean20'),
         gpuP5:   m('gpuP5')  ?? m('gpuMed'),
         gpuP95:  m('gpuP95') ?? m('gpuMed'),
       };
@@ -176,7 +187,7 @@ console.log(`Aggregiert ${csvFiles.length} Läufe für Zusammenfassungs-Charts.`
 // ---------------------------------------------------------------------------
 {
   const fx = (v) => (v != null && Number.isFinite(v)) ? v.toFixed(3).replace('.', ',') : '';
-  const aggHeader = 'showcase;api;n;metric;cpuMedMs;cpuP5Ms;cpuP95Ms;gpuMedMs;gpuP5Ms;gpuP95Ms';
+  const aggHeader = 'showcase;api;n;metric;cpuMedMs;cpuTrimMean10Ms;cpuTrimMean20Ms;cpuP5Ms;cpuP95Ms;gpuMedMs;gpuTrimMean10Ms;gpuTrimMean20Ms;gpuP5Ms;gpuP95Ms';
   const aggRows   = [aggHeader];
   for (const sh of Object.keys(dataAgg).sort()) {
     for (const api of ['webgl', 'webgpu']) {
@@ -185,8 +196,8 @@ console.log(`Aggregiert ${csvFiles.length} Läufe für Zusammenfassungs-Charts.`
       for (const n of Object.keys(ns).map(Number).sort((a, b) => a - b)) {
         const d = ns[n];
         aggRows.push([sh, api, n, d.metric,
-          fx(d.cpuMed), fx(d.cpuP5), fx(d.cpuP95),
-          fx(d.gpuMed), fx(d.gpuP5), fx(d.gpuP95),
+          fx(d.cpuMed), fx(d.cpuTrimMean10), fx(d.cpuTrimMean20), fx(d.cpuP5), fx(d.cpuP95),
+          fx(d.gpuMed), fx(d.gpuTrimMean10), fx(d.gpuTrimMean20), fx(d.gpuP5), fx(d.gpuP95),
         ].join(';'));
       }
     }
@@ -202,11 +213,11 @@ console.log(`Aggregiert ${csvFiles.length} Läufe für Zusammenfassungs-Charts.`
 // ---------------------------------------------------------------------------
 
 const SHOWCASE_LABELS = {
-  '05-drawcalls': 'Draw-Call Overhead',
-  '06-vertex':    'Vertex-Throughput',
+  '05-drawcalls': 'Draw-Call-Overhead',
+  '06-vertex':    'Vertex-Durchsatz',
   '07-lights':    'Viele Lichtquellen',
-  '08-nbody':     'N-Body Simulation',
-  '09-instancing':'Instanced Rendering',
+  '08-nbody':     'N-Körper-Simulation',
+  '09-instancing':'Instanziertes Rendering',
 };
 
 const X_AXIS_LABELS = {
@@ -251,8 +262,8 @@ const errorBarPlugin = {
   }
 };`;
 
-/** @param {string} showcaseId @param {object} dataSource @param {string} titleSuffix @param {string} idSuffix */
-function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSuffix = '') {
+/** @param {string} showcaseId @param {object} dataSource @param {string} titleSuffix @param {string} idSuffix @param {'Med'|'TrimMean10'|'TrimMean20'} valueKey */
+function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSuffix = '', valueKey = 'Med') {
   const apis = dataSource[showcaseId];
   if (!apis) return '';
 
@@ -264,18 +275,26 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
 
   const gl  = apis['webgl']  || {};
   const gpu = apis['webgpu'] || {};
+  const cpuKey = `cpu${valueKey}`;
+  const gpuKey = `gpu${valueKey}`;
   const g   = (src, key) => allNs.map(n => src[n]?.[key] ?? null);
 
-  const glCpuMeds  = g(gl,  'cpuMed');  const glCpuP5s  = g(gl,  'cpuP5');  const glCpuP95s  = g(gl,  'cpuP95');
-  const glGpuMeds  = g(gl,  'gpuMed');  const glGpuP5s  = g(gl,  'gpuP5');  const glGpuP95s  = g(gl,  'gpuP95');
-  const gpCpuMeds  = g(gpu, 'cpuMed');  const gpCpuP5s  = g(gpu, 'cpuP5');  const gpCpuP95s  = g(gpu, 'cpuP95');
-  const gpGpuMeds  = g(gpu, 'gpuMed');  const gpGpuP5s  = g(gpu, 'gpuP5');  const gpGpuP95s  = g(gpu, 'gpuP95');
+  const glCpuMeds  = g(gl,  cpuKey);  const glCpuP5s  = g(gl,  'cpuP5');  const glCpuP95s  = g(gl,  'cpuP95');
+  const glGpuMeds  = g(gl,  gpuKey);  const glGpuP5s  = g(gl,  'gpuP5');  const glGpuP95s  = g(gl,  'gpuP95');
+  const gpCpuMeds  = g(gpu, cpuKey);  const gpCpuP5s  = g(gpu, 'cpuP5');  const gpCpuP95s  = g(gpu, 'cpuP95');
+  const gpGpuMeds  = g(gpu, gpuKey);  const gpGpuP5s  = g(gpu, 'gpuP5');  const gpGpuP95s  = g(gpu, 'gpuP95');
 
-  // Whisker auf der Gesamthoehe: base (GPU-Median) + CPU-P5/P95
-  const eb = (baseMeds, p5s, p95s) => allNs.map((_, i) =>
-    (baseMeds[i] != null && p5s[i] != null && p95s[i] != null)
-      ? { lo: baseMeds[i] + p5s[i], hi: baseMeds[i] + p95s[i] } : null
-  );
+  // Ein einziger Whisker oben auf dem gestapelten Balken: (gpuP5+cpuP5) → (gpuP95+cpuP95)
+  const ebTotal = (gpuP5s, gpuP95s, cpuP5s, cpuP95s) => allNs.map((_, i) => {
+    const gLo = gpuP5s[i], gHi = gpuP95s[i];
+    const cLo = cpuP5s[i] ?? 0, cHi = cpuP95s[i] ?? 0;
+    return (gLo != null && gHi != null) ? { lo: gLo + cLo, hi: gHi + cHi } : null;
+  });
+
+  const glEb = ebTotal(glGpuP5s, glGpuP95s, glCpuP5s, glCpuP95s);
+  const gpEb = ebTotal(gpGpuP5s, gpGpuP95s, gpCpuP5s, gpCpuP95s);
+  const allHis = [...glEb, ...gpEb].map(e => e?.hi).filter(v => v != null && Number.isFinite(v));
+  const yMax   = allHis.length ? Math.max(...allHis) * 1.15 : undefined;
 
   const unitLabel = METRIC_UNIT[(Object.values(gl)[0] || Object.values(gpu)[0])?.metric || 'gpu'];
   const safeId    = showcaseId.replace(/[^a-z0-9]/g, '_') + idSuffix;
@@ -306,7 +325,7 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
         {
           label: 'WebGL – CPU-Zeit', stack: 'webgl', order: 1,
           data: ${JSON.stringify(glCpuMeds)},
-          errorBars: ${JSON.stringify(eb(glGpuMeds, glCpuP5s, glCpuP95s))},
+          errorBars: ${JSON.stringify(ebTotal(glGpuP5s, glGpuP95s, glCpuP5s, glCpuP95s))},
           backgroundColor: 'rgba(183,0,119,0.35)', borderColor: 'rgba(140,0,90,0.7)', borderWidth: 1,
         },
         {
@@ -317,7 +336,7 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
         {
           label: 'WebGPU – CPU-Zeit', stack: 'webgpu', order: 1,
           data: ${JSON.stringify(gpCpuMeds)},
-          errorBars: ${JSON.stringify(eb(gpGpuMeds, gpCpuP5s, gpCpuP95s))},
+          errorBars: ${JSON.stringify(ebTotal(gpGpuP5s, gpGpuP95s, gpCpuP5s, gpCpuP95s))},
           backgroundColor: 'rgba(26,115,232,0.35)', borderColor: 'rgba(15,80,180,0.7)', borderWidth: 1,
         }
       ]
@@ -337,6 +356,7 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
         },
         y: {
           stacked: true,
+          suggestedMax: ${JSON.stringify(yMax)},
           title: { display: true, text: 'Zeit pro Frame (ms)', font: { size: 13 } },
           grid:  { color: '#e5e7eb' },
           ticks: { callback: (v) => v + ' ms' }
@@ -351,8 +371,16 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
 // Vollständige HTML-Seite
 // ---------------------------------------------------------------------------
 
+const VARIANTS = [
+  { key: 'Med',        suffix: '_med',    filename: 'med',     label: ' – Median' },
+  { key: 'TrimMean10', suffix: '_trim10', filename: 'trim10',  label: ' – 10 % getrimmter Mittelwert (p5–p95)' },
+  { key: 'TrimMean20', suffix: '_trim20', filename: 'trim20',  label: ' – 20 % getrimmter Mittelwert (p10–p90)' },
+];
+
 const showcaseIds  = Object.keys(dataAgg).sort();
-const chartsHtml   = showcaseIds.map(id => buildChartSection(id, dataAgg, '', '')).join('\n');
+const chartsHtml   = showcaseIds.flatMap(id =>
+  VARIANTS.map(v => buildChartSection(id, dataAgg, v.label, v.suffix, v.key))
+).join('\n');
 const timestamp    = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
 const fullHtml = `<!DOCTYPE html>
@@ -361,7 +389,7 @@ const fullHtml = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WebGL vs. WebGPU – Benchmark-Ergebnisse</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
+  <script>${CHARTJS_INLINE}<\/script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body   { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6;
@@ -379,7 +407,7 @@ const fullHtml = `<!DOCTYPE html>
 </head>
 <body>
   <h1>WebGL vs. WebGPU – Benchmark-Ergebnisse</h1>
-  <p class="meta">Median aus ${csvFiles.length} Läufen &nbsp;|&nbsp; Erstellt: ${new Date().toLocaleString('de-DE')}</p>
+  <p class="meta">Aggregiert aus ${csvFiles.length} Läufen (Median | 10\u202f%\u00a0TrimMean | 20\u202f%\u00a0TrimMean) &nbsp;|&nbsp; Erstellt: ${new Date().toLocaleString('de-DE')}</p>
   ${chartsHtml}
 </body>
 </html>`;
@@ -405,11 +433,13 @@ await page.setViewportSize({ width: 980, height: 500 });
 await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle', timeout: 30_000 });
 
 for (const id of showcaseIds) {
-  const safeId = id.replace(/[^a-z0-9]/g, '_');
-  const wrap   = page.locator(`#wrap_${safeId}`);
-  if (await wrap.count() === 0) { console.log(`  Kein Element fuer ${id}, uebersprungen.`); continue; }
-  await wrap.screenshot({ path: join(CHARTS_DIR, `${id}-${timestamp}.png`) });
-  console.log(`  ok  ${id}.png`);
+  for (const { suffix, filename } of VARIANTS) {
+    const safeId = id.replace(/[^a-z0-9]/g, '_') + suffix;
+    const wrap   = page.locator(`#wrap_${safeId}`);
+    if (await wrap.count() === 0) { console.log(`  Kein Element fuer ${id}${suffix}, uebersprungen.`); continue; }
+    await wrap.screenshot({ path: join(CHARTS_DIR, `${id}-${filename}-${timestamp}.png`) });
+    console.log(`  ok  ${id}-${filename}.png`);
+  }
 }
 
 await browser.close();

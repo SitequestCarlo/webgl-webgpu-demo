@@ -208,7 +208,7 @@ const SHOWCASES = [
 // CSV-Hilfsfunktionen
 // ---------------------------------------------------------------------------
 
-const CSV_HEADER = 'showcase;api;n;metric;frames;durationMs;avgFps;avgMs;medMs;p5Ms;p95Ms;minMs;maxMs;cpuAvgMs;cpuMedMs;cpuP5Ms;cpuP95Ms;cpuMinMs;cpuMaxMs;gpuAvgMs;gpuMedMs;gpuP5Ms;gpuP95Ms;gpuMinMs;gpuMaxMs';
+const CSV_HEADER = 'showcase;api;n;metric;frames;durationMs;avgFps;avgMs;medMs;p5Ms;p95Ms;minMs;maxMs;cpuAvgMs;cpuMedMs;cpuTrimMean10Ms;cpuTrimMean20Ms;cpuP5Ms;cpuP95Ms;cpuMinMs;cpuMaxMs;gpuAvgMs;gpuMedMs;gpuTrimMean10Ms;gpuTrimMean20Ms;gpuP5Ms;gpuP95Ms;gpuMinMs;gpuMaxMs';
 
 /** @param {(string|number)[]} cells */
 function toCsvRow(cells) {
@@ -244,12 +244,16 @@ function rowFromResult(showcaseId, api, n, r) {
     dn(r.maxMs),
     fx(r.cpu?.avgMs),
     fx(r.cpu?.medMs),
+    fx(r.cpu?.trimMean10Ms),
+    fx(r.cpu?.trimMean20Ms),
     fx(r.cpu?.p5Ms),
     fx(r.cpu?.p95Ms),
     fx(r.cpu?.minMs),
     fx(r.cpu?.maxMs),
     fx(r.gpu?.avgMs),
     fx(r.gpu?.medMs),
+    fx(r.gpu?.trimMean10Ms),
+    fx(r.gpu?.trimMean20Ms),
     fx(r.gpu?.p5Ms),
     fx(r.gpu?.p95Ms),
     fx(r.gpu?.minMs),

@@ -78,6 +78,8 @@ export interface BenchmarkOptions {
 export interface SampleStats {
   avgMs: number;
   medMs: number;
+  trimMean10Ms: number;  // 10 % Trimmed Mean (Mittelwert der mittleren 90 %, p5–p95)
+  trimMean20Ms: number;  // 20 % Trimmed Mean (Mittelwert der mittleren 80 %, p10–p90)
   p5Ms: number;
   p95Ms: number;
   minMs: number;
@@ -91,9 +93,17 @@ function computeStats(samples: number[]): SampleStats {
   const mid = Math.floor(n / 2);
   const p5Index  = Math.min(n - 1, Math.floor(n * 0.05));
   const p95Index = Math.min(n - 1, Math.floor(n * 0.95));
+  const p10Index = Math.min(n - 1, Math.floor(n * 0.10));
+  const p90Index = Math.min(n - 1, Math.floor(n * 0.90));
+  const trimMean = (lo: number, hi: number) => {
+    const slice = sorted.slice(lo, hi + 1);
+    return slice.reduce((s, v) => s + v, 0) / slice.length;
+  };
   return {
     avgMs: sum / n,
     medMs: n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid],
+    trimMean10Ms: trimMean(p5Index, p95Index),
+    trimMean20Ms: trimMean(p10Index, p90Index),
     p5Ms:  sorted[p5Index],
     p95Ms: sorted[p95Index],
     minMs: sorted[0],
