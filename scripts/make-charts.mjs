@@ -29,7 +29,7 @@ const CHARTS_DIR  = join(RESULTS_DIR, 'charts');
 // ---------------------------------------------------------------------------
 
 const csvFiles = readdirSync(RESULTS_DIR)
-  .filter(f => f.startsWith('all-benchmarks-') && f.endsWith('.csv'))
+  .filter(f => /^all-benchmarks-\d{4}-.*\.csv$/.test(f))
   .sort().reverse();
 
 if (csvFiles.length === 0) {
@@ -41,9 +41,9 @@ const csvFile = csvFiles[0];
 const csvPath = join(RESULTS_DIR, csvFile);
 console.log(`Lese: ${csvPath}`);
 
-const csv   = readFileSync(csvPath, 'utf8');
+const csv   = readFileSync(csvPath, 'utf8').replace(/^\uFEFF/, '');
 const lines = csv.trim().split('\n');
-const header = lines[0].split(',');
+const header = lines[0].split(';');
 const col = (name) => header.indexOf(name);
 
 const iShowcase = col('showcase');
@@ -69,16 +69,17 @@ const iGpuP95   = col('gpuP95Ms');
 const data = {};
 
 for (let i = 1; i < lines.length; i++) {
-  const row = lines[i].split(',');
+  const row = lines[i].split(';');
   const showcase = row[iShowcase];
   if (!showcase || row[iMetric] === 'error') continue;
   const api    = row[iApi];
   const n      = Number(row[iN]);
   const metric = row[iMetric] || 'gpu';
-  const med    = Number(row[iMed])  || 0;
-  const p5     = iP5  >= 0 && row[iP5]  ? Number(row[iP5])  : med;
-  const p95    = iP95 >= 0 && row[iP95] ? Number(row[iP95]) : med;
-  const nf = (idx) => idx >= 0 && row[idx] ? Number(row[idx]) : null;
+  const pn = (s) => { const v = Number((s ?? '').replace(',', '.')); return Number.isFinite(v) ? v : 0; };
+  const med    = pn(row[iMed]);
+  const p5     = iP5  >= 0 && row[iP5]  ? pn(row[iP5])  : med;
+  const p95    = iP95 >= 0 && row[iP95] ? pn(row[iP95]) : med;
+  const nf = (idx) => { if (idx < 0 || !row[idx]) return null; const v = Number(row[idx].replace(',', '.')); return Number.isFinite(v) ? v : null; };
   const cpuMed = nf(iCpuMed); const cpuP5 = nf(iCpuP5); const cpuP95 = nf(iCpuP95);
   const gpuMed = nf(iGpuMed); const gpuP5 = nf(iGpuP5); const gpuP95 = nf(iGpuP95);
 
@@ -92,6 +93,111 @@ for (let i = 1; i < lines.length; i++) {
 }
 
 // ---------------------------------------------------------------------------
+// Alle CSV-Dateien aggregieren (Median der Mediane ueber alle Läufe)
+// ---------------------------------------------------------------------------
+
+function arrMedian(arr) {
+  const vals = arr.filter(v => v != null && Number.isFinite(v)).sort((a, b) => a - b);
+  if (vals.length === 0) return null;
+  return vals[Math.floor(vals.length / 2)];
+}
+
+/** Liest eine CSV und gibt pro (showcase, api, n) ein Array von Messwert-Objekten zurueck. */
+function collectRows(filePath) {
+  const ls  = readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '').trim().split('\n');
+  const hdr = ls[0].split(';');
+  const c   = (name) => hdr.indexOf(name);
+  const iSh = c('showcase'), iAp = c('api'), iNn = c('n'), iMe = c('metric');
+  const iCM = c('cpuMedMs'), iCP5 = c('cpuP5Ms'), iCP95 = c('cpuP95Ms');
+  const iGM = c('gpuMedMs'), iGP5 = c('gpuP5Ms'), iGP95 = c('gpuP95Ms');
+  const out = {};
+  for (let i = 1; i < ls.length; i++) {
+    const row = ls[i].split(';');
+    const showcase = row[iSh];
+    if (!showcase || row[iMe] === 'error') continue;
+    const api = row[iAp];
+    const n   = Number(row[iNn]);
+    const nf  = (idx) => { if (idx < 0 || !row[idx]) return null; const v = Number(row[idx].replace(',', '.')); return Number.isFinite(v) ? v : null; };
+    out[showcase]      ??= {};
+    out[showcase][api] ??= {};
+    out[showcase][api][n] ??= [];
+    out[showcase][api][n].push({
+      metric: row[iMe] || 'gpu',
+      cpuMed: nf(iCM), cpuP5: nf(iCP5), cpuP95: nf(iCP95),
+      gpuMed: nf(iGM), gpuP5: nf(iGP5), gpuP95: nf(iGP95),
+    });
+  }
+  return out;
+}
+
+// Alle CSV-Dateien einlesen und zusammenfuehren
+const allRuns = {};
+for (const f of csvFiles) {
+  const parsed = collectRows(join(RESULTS_DIR, f));
+  for (const [sh, apis] of Object.entries(parsed)) {
+    for (const [api, ns] of Object.entries(apis)) {
+      for (const [n, rows] of Object.entries(ns)) {
+        allRuns[sh]      ??= {};
+        allRuns[sh][api] ??= {};
+        allRuns[sh][api][n] ??= [];
+        allRuns[sh][api][n].push(...rows);
+      }
+    }
+  }
+}
+
+// Median-Aggregation
+const dataAgg = {};
+for (const [sh, apis] of Object.entries(allRuns)) {
+  for (const [api, ns] of Object.entries(apis)) {
+    for (const [n, rows] of Object.entries(ns)) {
+      dataAgg[sh]      ??= {};
+      dataAgg[sh][api] ??= {};
+      const m = (key) => arrMedian(rows.map(r => r[key]));
+      dataAgg[sh][api][Number(n)] = {
+        metric: rows[0].metric,
+        cpuMed:  m('cpuMed'),
+        cpuP5:   m('cpuP5')  ?? m('cpuMed'),
+        cpuP95:  m('cpuP95') ?? m('cpuMed'),
+        gpuMed:  m('gpuMed'),
+        gpuP5:   m('gpuP5')  ?? m('gpuMed'),
+        gpuP95:  m('gpuP95') ?? m('gpuMed'),
+      };
+    }
+  }
+}
+
+console.log(`Aggregiert ${csvFiles.length} Läufe für Zusammenfassungs-Charts.`);
+
+// ---------------------------------------------------------------------------
+// Aggregiertes CSV exportieren (Median der Mediane über alle Läufe)
+// Dieses CSV repräsentiert exakt die Werte, die in den Zusammenfassungs-Charts
+// dargestellt werden, und dient als Grundlage für make-chart-data.mjs.
+// ---------------------------------------------------------------------------
+{
+  const fx = (v) => (v != null && Number.isFinite(v)) ? v.toFixed(3).replace('.', ',') : '';
+  const aggHeader = 'showcase;api;n;metric;cpuMedMs;cpuP5Ms;cpuP95Ms;gpuMedMs;gpuP5Ms;gpuP95Ms';
+  const aggRows   = [aggHeader];
+  for (const sh of Object.keys(dataAgg).sort()) {
+    for (const api of ['webgl', 'webgpu']) {
+      const ns = dataAgg[sh]?.[api];
+      if (!ns) continue;
+      for (const n of Object.keys(ns).map(Number).sort((a, b) => a - b)) {
+        const d = ns[n];
+        aggRows.push([sh, api, n, d.metric,
+          fx(d.cpuMed), fx(d.cpuP5), fx(d.cpuP95),
+          fx(d.gpuMed), fx(d.gpuP5), fx(d.gpuP95),
+        ].join(';'));
+      }
+    }
+  }
+  const aggTimestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const aggPath = join(RESULTS_DIR, `all-benchmarks-agg-${aggTimestamp}.csv`);
+  writeFileSync(aggPath, '\uFEFF' + aggRows.join('\n') + '\n', 'utf8');
+  console.log(`Aggregiert-CSV: ${aggPath}`);
+};
+
+// ---------------------------------------------------------------------------
 // Chart-HTML pro Showcase
 // ---------------------------------------------------------------------------
 
@@ -101,6 +207,14 @@ const SHOWCASE_LABELS = {
   '07-lights':    'Viele Lichtquellen',
   '08-nbody':     'N-Body Simulation',
   '09-instancing':'Instanced Rendering',
+};
+
+const X_AXIS_LABELS = {
+  '05-drawcalls': 'Anzahl W\u00fcrfel',
+  '06-vertex':    'Anzahl Vertices',
+  '07-lights':    'Anzahl Lichtquellen',
+  '08-nbody':     'Anzahl Teilchen',
+  '09-instancing':'Anzahl Instanzen',
 };
 
 const METRIC_UNIT = { cpu: 'CPU-Zeit', gpu: 'GPU-Zeit', frame: 'Frame-Zeit' };
@@ -137,12 +251,13 @@ const errorBarPlugin = {
   }
 };`;
 
-/** @param {string} showcaseId */
-function buildChartSection(showcaseId) {
-  const apis = data[showcaseId];
+/** @param {string} showcaseId @param {object} dataSource @param {string} titleSuffix @param {string} idSuffix */
+function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSuffix = '') {
+  const apis = dataSource[showcaseId];
   if (!apis) return '';
 
-  const label  = SHOWCASE_LABELS[showcaseId] || showcaseId;
+  const label    = SHOWCASE_LABELS[showcaseId] || showcaseId;
+  const xLabel   = X_AXIS_LABELS[showcaseId]   || 'N';
   const allNs  = [...new Set(
     Object.values(apis).flatMap(a => Object.keys(a).map(Number))
   )].sort((a, b) => a - b);
@@ -163,12 +278,12 @@ function buildChartSection(showcaseId) {
   );
 
   const unitLabel = METRIC_UNIT[(Object.values(gl)[0] || Object.values(gpu)[0])?.metric || 'gpu'];
-  const safeId    = showcaseId.replace(/[^a-z0-9]/g, '_');
+  const safeId    = showcaseId.replace(/[^a-z0-9]/g, '_') + idSuffix;
   const labels    = allNs.map(String);
 
   return `
 <div class="chart-wrap" id="wrap_${safeId}">
-  <h2>${label}</h2>
+  <h2>${label}${titleSuffix}</h2>
   <div class="canvas-box">
     <canvas id="chart_${safeId}"></canvas>
   </div>
@@ -184,23 +299,23 @@ function buildChartSection(showcaseId) {
       labels: ${JSON.stringify(labels)},
       datasets: [
         {
-          label: 'WebGL', stack: 'webgl', order: 2,
+          label: 'WebGL – GPU-Zeit', stack: 'webgl', order: 2,
           data: ${JSON.stringify(glGpuMeds)},
           backgroundColor: 'rgba(183,0,119,0.85)', borderColor: 'rgba(140,0,90,1)', borderWidth: 1,
         },
         {
-          label: '', stack: 'webgl', order: 1,
+          label: 'WebGL – CPU-Zeit', stack: 'webgl', order: 1,
           data: ${JSON.stringify(glCpuMeds)},
           errorBars: ${JSON.stringify(eb(glGpuMeds, glCpuP5s, glCpuP95s))},
           backgroundColor: 'rgba(183,0,119,0.35)', borderColor: 'rgba(140,0,90,0.7)', borderWidth: 1,
         },
         {
-          label: 'WebGPU', stack: 'webgpu', order: 2,
+          label: 'WebGPU – GPU-Zeit', stack: 'webgpu', order: 2,
           data: ${JSON.stringify(gpGpuMeds)},
           backgroundColor: 'rgba(26,115,232,0.85)', borderColor: 'rgba(15,80,180,1)', borderWidth: 1,
         },
         {
-          label: '', stack: 'webgpu', order: 1,
+          label: 'WebGPU – CPU-Zeit', stack: 'webgpu', order: 1,
           data: ${JSON.stringify(gpCpuMeds)},
           errorBars: ${JSON.stringify(eb(gpGpuMeds, gpCpuP5s, gpCpuP95s))},
           backgroundColor: 'rgba(26,115,232,0.35)', borderColor: 'rgba(15,80,180,0.7)', borderWidth: 1,
@@ -212,18 +327,17 @@ function buildChartSection(showcaseId) {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 14,
-          filter: (item) => item.text !== '' } },
+        legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 14 } },
       },
       scales: {
         x: {
-          title: { display: true, text: 'N', font: { size: 13 } },
+          title: { display: true, text: ${JSON.stringify(xLabel)}, font: { size: 13 } },
           grid:  { color: '#e5e7eb' },
           stacked: true,
         },
         y: {
           stacked: true,
-          title: { display: true, text: 'Zeit (ms)', font: { size: 13 } },
+          title: { display: true, text: 'Zeit pro Frame (ms)', font: { size: 13 } },
           grid:  { color: '#e5e7eb' },
           ticks: { callback: (v) => v + ' ms' }
         }
@@ -237,8 +351,8 @@ function buildChartSection(showcaseId) {
 // Vollständige HTML-Seite
 // ---------------------------------------------------------------------------
 
-const showcaseIds  = Object.keys(data).sort();
-const chartsHtml   = showcaseIds.map(buildChartSection).join('\n');
+const showcaseIds  = Object.keys(dataAgg).sort();
+const chartsHtml   = showcaseIds.map(id => buildChartSection(id, dataAgg, '', '')).join('\n');
 const timestamp    = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
 const fullHtml = `<!DOCTYPE html>
@@ -265,7 +379,7 @@ const fullHtml = `<!DOCTYPE html>
 </head>
 <body>
   <h1>WebGL vs. WebGPU – Benchmark-Ergebnisse</h1>
-  <p class="meta">Quelle: ${csvFile} &nbsp;|&nbsp; Erstellt: ${new Date().toLocaleString('de-DE')}</p>
+  <p class="meta">Median aus ${csvFiles.length} Läufen &nbsp;|&nbsp; Erstellt: ${new Date().toLocaleString('de-DE')}</p>
   ${chartsHtml}
 </body>
 </html>`;
@@ -293,13 +407,9 @@ await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle', timeout: 30_00
 for (const id of showcaseIds) {
   const safeId = id.replace(/[^a-z0-9]/g, '_');
   const wrap   = page.locator(`#wrap_${safeId}`);
-  if (await wrap.count() === 0) {
-    console.log(`  ⚠  Kein Element für ${id} gefunden, übersprungen.`);
-    continue;
-  }
-  const pngPath = join(CHARTS_DIR, `${id}-${timestamp}.png`);
-  await wrap.screenshot({ path: pngPath });
-  console.log(`  ✓  ${id}.png`);
+  if (await wrap.count() === 0) { console.log(`  Kein Element fuer ${id}, uebersprungen.`); continue; }
+  await wrap.screenshot({ path: join(CHARTS_DIR, `${id}-${timestamp}.png`) });
+  console.log(`  ok  ${id}.png`);
 }
 
 await browser.close();

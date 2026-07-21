@@ -70,7 +70,7 @@ const params = { segments: readBenchmarkValue() ?? 200, rings: 100, autoRotate: 
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
+const benchmark = new BenchmarkRun({ warmupMs: 2500, measureMs: 1, minFrames: 1000 });
 const cpuTimer = new CpuTimer();
 let depth = createDepthTexture(device, 1, 1);
 

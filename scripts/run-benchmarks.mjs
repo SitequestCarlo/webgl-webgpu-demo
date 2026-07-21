@@ -21,18 +21,6 @@
  *   Vulkan aktiviert. Die Adapter-Zeilen im Log ([WebGPU] adapter / [WebGL] renderer)
  *   zeigen, ob beide APIs dieselbe echte GPU nutzen.
  *
- * TIPP (GPU-Takt-Stabilität, Linux/NVIDIA):
- *   GPU-DVFS verursacht Ausreißer bei kleinen Workloads (avg >> med). Um den Takt
- *   auf einen festen Wert zu sperren und damit Mess-Rauschen zu minimieren:
- *
- *     sudo nvidia-smi -pm 1                         # Persistence Mode
- *     sudo nvidia-smi --lock-gpu-clocks=<base_mhz>  # Takt fixieren
- *     npm run benchmark
- *     sudo nvidia-smi --reset-gpu-clocks            # danach zurücksetzen
- *
- *   Alternativ reicht oft, alle anderen GPU-Prozesse zu beenden (Browser-Fenster,
- *   Video-Decoder, DE-Compositing-Offloading).
- *
  * Ausgabe:
  *   benchmark-results/<showcase-id>.csv   (je Showcase)
  *   benchmark-results/all-benchmarks.csv  (alle Messungen)
@@ -168,9 +156,10 @@ const SHOWCASES = [
     },
     param: {
       // "Segmente" steuert die Dreieckzahl; Ringe bleibt auf Standardwert (100)
+      // Bereich so gewählt, dass GPU-Zeit durchgehend 0,5–4 ms liegt (Buffer < 14 MB).
       role: 'spinbutton',
       label: 'Segmente',
-      values: [500, 1000, 2000, 4000, 8000, 16000],
+      values: [2000, 4000, 8000, 16000, 32000],
     },
   },
   {
@@ -219,20 +208,23 @@ const SHOWCASES = [
 // CSV-Hilfsfunktionen
 // ---------------------------------------------------------------------------
 
-const CSV_HEADER = 'showcase,api,n,metric,frames,durationMs,avgFps,avgMs,medMs,p5Ms,p95Ms,minMs,maxMs,cpuAvgMs,cpuMedMs,cpuP5Ms,cpuP95Ms,cpuMinMs,cpuMaxMs,gpuAvgMs,gpuMedMs,gpuP5Ms,gpuP95Ms,gpuMinMs,gpuMaxMs,frameMedMs';
+const CSV_HEADER = 'showcase;api;n;metric;frames;durationMs;avgFps;avgMs;medMs;p5Ms;p95Ms;minMs;maxMs;cpuAvgMs;cpuMedMs;cpuP5Ms;cpuP95Ms;cpuMinMs;cpuMaxMs;gpuAvgMs;gpuMedMs;gpuP5Ms;gpuP95Ms;gpuMinMs;gpuMaxMs';
 
 /** @param {(string|number)[]} cells */
 function toCsvRow(cells) {
   return cells
     .map(c => {
       const s = String(c ?? '');
-      return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+      return s.includes(';') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
     })
-    .join(',');
+    .join(';');
 }
 
+/** Deutsches Zahlenformat: Punkt → Komma @param {number} v @param {number} [dec] */
+const dn = (v, dec = 3) => v.toFixed(dec).replace('.', ',');
+
 /** @param {number|undefined} v */
-const fx = (v) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(3) : '');
+const fx = (v) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(3).replace('.', ',') : '');
 
 /** @param {object} r */
 function rowFromResult(showcaseId, api, n, r) {
@@ -242,14 +234,14 @@ function rowFromResult(showcaseId, api, n, r) {
     n,
     r.metric ?? 'frame',
     r.frames,
-    r.durationMs.toFixed(1),
-    r.avgFps.toFixed(2),
-    r.avgMs.toFixed(3),
-    r.medMs.toFixed(3),
-    r.p5Ms.toFixed(3),
-    r.p95Ms.toFixed(3),
-    r.minMs.toFixed(3),
-    r.maxMs.toFixed(3),
+    dn(r.durationMs, 1),
+    dn(r.avgFps, 2),
+    dn(r.avgMs),
+    dn(r.medMs),
+    dn(r.p5Ms),
+    dn(r.p95Ms),
+    dn(r.minMs),
+    dn(r.maxMs),
     fx(r.cpu?.avgMs),
     fx(r.cpu?.medMs),
     fx(r.cpu?.p5Ms),
@@ -262,7 +254,6 @@ function rowFromResult(showcaseId, api, n, r) {
     fx(r.gpu?.p95Ms),
     fx(r.gpu?.minMs),
     fx(r.gpu?.maxMs),
-    fx(r.frame?.medMs),
   ]);
 }
 
@@ -487,13 +478,13 @@ async function main() {
 
         // CSV pro Showcase + API schreiben (webgl / webgpu getrennt)
         const outPath = join(RESULTS_DIR, `${showcase.id}-${api}-${timestamp}.csv`);
-        writeFileSync(outPath, [CSV_HEADER, ...apiCsvRows].join('\n') + '\n', 'utf8');
+        writeFileSync(outPath, '\uFEFF' + [CSV_HEADER, ...apiCsvRows].join('\n') + '\n', 'utf8');
       }
     }
 
     // Kombinations-CSV
     const allPath = join(RESULTS_DIR, `all-benchmarks-${timestamp}.csv`);
-    writeFileSync(allPath, [CSV_HEADER, ...allCsvRows].join('\n') + '\n', 'utf8');
+    writeFileSync(allPath, '\uFEFF' + [CSV_HEADER, ...allCsvRows].join('\n') + '\n', 'utf8');
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`  Gesamtergebnis: ${allPath}`);
     console.log('─'.repeat(60));

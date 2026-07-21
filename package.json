@@ -8,8 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "benchmark": "node scripts/run-benchmarks.mjs",
+    "benchmark:full": "node scripts/run-full.mjs",
     "chart": "node scripts/make-chart-data.mjs",
-    "charts": "node scripts/make-charts.mjs"
+    "charts": "node scripts/make-charts.mjs",
+    "compare": "node scripts/compare-results.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
