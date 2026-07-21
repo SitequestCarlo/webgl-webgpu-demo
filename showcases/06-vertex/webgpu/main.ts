@@ -13,9 +13,6 @@ import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
 import BENCH_WGSL   from "../shaders/gpu/vertex-simple.wgsl?raw";
-import HEAVY_BASE   from "../shaders/gpu/vertex-heavy.wgsl?raw";
-
-const HEAVY_WGSL = HEAVY_BASE;
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -24,7 +21,6 @@ const { device, context, format } = await getWebGPU(canvas);
 const sceneBGL = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }]});
 const drawBGL  = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: DRAW_UNIFORM_SIZE } }]});
 const shader      = device.createShaderModule({ code: BENCH_WGSL });
-const shaderHeavy = device.createShaderModule({ code: HEAVY_WGSL });
 function makePipeline(mod: GPUShaderModule): GPURenderPipeline {
   return device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [sceneBGL, drawBGL] }),
@@ -35,8 +31,7 @@ function makePipeline(mod: GPUShaderModule): GPURenderPipeline {
   });
 }
 const pipelineSimple = makePipeline(shader);
-const pipelineHeavy  = makePipeline(shaderHeavy);
-let pipeline = pipelineHeavy;
+let pipeline = pipelineSimple;
 
 const sceneUB = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const sceneData = new Float32Array(64);
@@ -66,7 +61,7 @@ function buildMesh(seg: number, rings: number): void {
   indexCount = geo.indexCount; triCount = geo.indexCount / 3;
 }
 
-const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true, heavyVS: true };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
@@ -80,13 +75,12 @@ const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
 const msCtrl  = gui.add({ ms: supportsTs ? "– ms (GPU)" : "– ms" }, "ms").name("GPU-Zeit").disable();
 gui.add(params, "segments", 10, 20000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
-gui.add(params, "heavyVS").name("Heavy VS").onChange((v: boolean) => { pipeline = v ? pipelineHeavy : pipelineSimple; });
 gui.add(params, "autoRotate").name("Rotation");
 gui.add({ run: async () => {
   resultsEl.style.display = "block";
   resultsEl.textContent = `Messe ${(triCount/1000).toFixed(0)}k Dreiecke ...`;
   const r = await benchmark.start();
-  resultsEl.textContent = `[WebGPU] ${(triCount/1000).toFixed(0)}k Dreiecke${params.heavyVS?" (Heavy VS)":""}\n${formatResult(r)}\nGPU: ${gpuTimer.lastMs.toFixed(supportsTs?3:2)} ms`;
+  resultsEl.textContent = `[WebGPU] ${(triCount/1000).toFixed(0)}k Dreiecke\n${formatResult(r)}\nGPU: ${gpuTimer.lastMs.toFixed(supportsTs?3:2)} ms`;
 }}, "run").name("Benchmark starten");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
@@ -132,13 +126,9 @@ async function render(now: number): Promise<void> {
   pass.drawIndexed(indexCount);
   pass.end();
   gpuTimer.resolve(cmd);
-  const t0 = performance.now();
   device.queue.submit([cmd.finish()]);
   gpuTimer.afterSubmit();
   cpuTimer.end();
-  // CPU-Fallback, falls das Device keine Timestamp-Queries unterstützt.
-  const fallbackMs = supportsTs ? undefined : performance.now() - t0;
-  const gpuMs = gpuTimer.takeSample() ?? fallbackMs;
   // Screenshot-Trigger (einmalig nach Button-Klick)
   if (pendingCapture) {
     pendingCapture = false;
@@ -149,7 +139,9 @@ async function render(now: number): Promise<void> {
     }, 'image/png');
   }
   if (benchmark.isRunning) await device.queue.onSubmittedWorkDone(); // Drain (yield) → Timestamp-Readback fertig
-  stats.update(); benchmark.sample(now, benchmark.isRunning ? (gpuTimer.takeSample() ?? gpuMs) : gpuMs, cpuTimer.lastMs);
+  const gpuMs = gpuTimer.takeSample() ?? undefined;
+  stats.update();
+  benchmark.sample(now, gpuMs, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }
 

@@ -3,7 +3,6 @@
 //
 // GPU-Timing: EXT_disjoint_timer_query_webgl2 misst die echte GPU-Renderzeit
 // asynchron (ns-genau), ohne den CPU-Thread mit gl.finish() zu blockieren.
-// Heavy VS: 8 zusätzliche sin/cos-Operationen pro Vertex simulieren teure Skinning-Berechnungen.
 
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
@@ -16,7 +15,6 @@ import vertexSimpleGlsl from "../shaders/gl/vertex-simple.glsl?raw";
 
 const BENCH_FS_GLSL = splitGLSL(vertexSimpleGlsl)[1];
 
-// Einfacher und schwerer Vertex-Shader für Vergleich
 const VS_SIMPLE = /* glsl */`#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPosition;
@@ -30,38 +28,15 @@ void main(){
   gl_Position=uProj*uView*w;
 }`;
 
-// Heavy VS: 8 sin/cos-Ops pro Vertex, identische Arithmetik zum WGSL-Shader
-const VS_HEAVY = /* glsl */`#version 300 es
-precision highp float;
-layout(location=0) in vec3 aPosition;
-layout(location=1) in vec3 aNormal;
-uniform mat4 uModel,uView,uProj;
-uniform mat3 uNormalMatrix;
-out vec3 vWorldPos, vNormal;
-void main(){
-  // Skalare Akkumulation (identisch zu vertex-heavy.wgsl) → fairer API-Vergleich
-  float d=0.0;
-  for(int i=0;i<8;i++){
-    float fi=float(i+1);
-    d+=sin(aPosition.x*fi)*cos(aPosition.y*fi)*sin(aPosition.z*fi)*0.02;
-  }
-  vec3 pos=aPosition+aNormal*d;
-  vec4 w=uModel*vec4(pos,1.0);
-  vWorldPos=w.xyz; vNormal=uNormalMatrix*aNormal;
-  gl_Position=uProj*uView*w;
-}`;
-
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
 const gl = getWebGL2(canvas);
 gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.clearColor(0.06, 0.07, 0.09, 1);
 
 const programSimple = createProgram(gl, VS_SIMPLE, BENCH_FS_GLSL);
-const programHeavy  = createProgram(gl, VS_HEAVY,  BENCH_FS_GLSL);
 const uSimple = getUniforms(gl, programSimple, ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess"] as const);
-const uHeavy  = getUniforms(gl, programHeavy,  ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess"] as const);
-let program = programHeavy;
-let U       = uHeavy;
+let program = programSimple;
+let U       = uSimple;
 
 const proj = mat4.create(), view = mat4.create(), model = mat4.create(), normalMat = mat3.create();
 const cameraPos = vec3.fromValues(0, 0, 3), lightPos = vec3.fromValues(4, 6, 4);
@@ -85,7 +60,7 @@ function buildMesh(segments: number, rings: number): void {
   gl.bindVertexArray(null);
 }
 
-const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true, heavyVS: true };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!);
@@ -100,16 +75,12 @@ const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
   const msCtrl  = gui.add({ ms: "– ms" }, "ms").name(gpuTimer.enabled ? "GPU-Zeit (Query)" : "GPU-Zeit").disable();
 gui.add(params, "segments", 10, 20000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
-gui.add(params, "heavyVS").name("Heavy VS").onChange((v: boolean) => {
-  program = v ? programHeavy : programSimple;
-  U       = v ? uHeavy       : uSimple;
-});
 gui.add(params, "autoRotate").name("Rotation");
 gui.add({ run: async () => {
   resultsEl.style.display = "block";
   resultsEl.textContent = `Messe ${(currentTriCount/1000).toFixed(0)}k Dreiecke ...`;
   const r = await benchmark.start();
-  resultsEl.textContent = `[WebGL] ${(currentTriCount/1000).toFixed(0)}k Dreiecke${params.heavyVS ? " (Heavy VS)" : ""}\n${formatResult(r)}\nGPU avg: ${gpuTimer.lastMs.toFixed(3)} ms`;
+  resultsEl.textContent = `[WebGL] ${(currentTriCount/1000).toFixed(0)}k Dreiecke\n${formatResult(r)}\nGPU avg: ${gpuTimer.lastMs.toFixed(3)} ms`;
 } }, "run").name("Benchmark starten");
 gui.add({ shot: () => { pendingCapture = true; } }, "shot").name("Screenshot (PNG)");
 setInterval(() => {
