@@ -129,7 +129,7 @@ const params = { N: readBenchmarkValue() ?? 256, dt: 0.002, softening: 0.1 };
 rebuild();
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
+const benchmark = new BenchmarkRun({ warmupMs: 1000, measureMs: 1, minFrames: 1000 });
 const gpuTimer = new GlTimer(gl);
 const cpuTimer = new CpuTimer();
 

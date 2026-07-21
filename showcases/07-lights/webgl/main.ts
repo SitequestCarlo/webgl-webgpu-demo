@@ -1,9 +1,9 @@
-ï»¿// Multi-Light Showcase â€“ WebGL2
+// Multi-Light Showcase – WebGL2
 // Misst Fragment-Shader-Last unter N Punktlichtquellen (Blinn-Phong).
 //
 // WebGL-spezifisch: MAX_LIGHTS ist eine compile-time Konstante im GLSL-Shader.
-// Die aktive Anzahl wird per uNumLights-Uniform gesetzt â€” kein Shader-Rebuild nÃ¶tig.
-// Pro Frame entstehen N Ã— 2 gl.uniform3f()-Aufrufe: API-Overhead wÃ¤chst linear mit N.
+// Die aktive Anzahl wird per uNumLights-Uniform gesetzt — kein Shader-Rebuild nötig.
+// Pro Frame entstehen N × 2 gl.uniform3f()-Aufrufe: API-Overhead wächst linear mit N.
 
 import '/src/shared/showcase.css';
 import { GUI } from "lil-gui";
@@ -20,10 +20,10 @@ import multiLightGlsl from "../shaders/gl/multi-light.glsl?raw";
 // Konstante & Shader-Vorbereitung
 // ---------------------------------------------------------------------------
 
-/** Maximale Lichtanzahl â€” compile-time Grenze des GLSL-Arrays.
- * WebGL2-Limit: 2Ã—MAX_LIGHTS vec3-Uniforms mÃ¼ssen in MAX_FRAGMENT_UNIFORM_VECTORS passen.
- * Bei 1024 vec4-Slots (Minimum-Garantie) und 2 Arrays Ã  N vec4 bleiben ~500 nutzbar.
- * â†’ In der Praxis sicherer Wert: 256. */
+/** Maximale Lichtanzahl — compile-time Grenze des GLSL-Arrays.
+ * WebGL2-Limit: 2×MAX_LIGHTS vec3-Uniforms müssen in MAX_FRAGMENT_UNIFORM_VECTORS passen.
+ * Bei 1024 vec4-Slots (Minimum-Garantie) und 2 Arrays à N vec4 bleiben ~500 nutzbar.
+ * ? In der Praxis sicherer Wert: 256. */
 const MAX_LIGHTS = 256;
 
 // Shader aus einer kombinierten GLSL-Datei aufteilen (VS || FS, getrennt durch #version)
@@ -38,7 +38,7 @@ const resultsEl = document.getElementById("results") as HTMLDivElement;
 
 const gl = getWebGL2(canvas);
 gl.enable(gl.DEPTH_TEST);          // Tiefentest: verdeckte Fragmente verwerfen
-gl.enable(gl.CULL_FACE);           // Backface Culling: RÃ¼ckseiten nicht zeichnen
+gl.enable(gl.CULL_FACE);           // Backface Culling: Rückseiten nicht zeichnen
 gl.clearColor(0.02, 0.02, 0.04, 1);
 
 // ---------------------------------------------------------------------------
@@ -53,8 +53,8 @@ const U = getUniforms(gl, program, [
   "uAmbient", "uShininess", "uNumLights",
 ] as const);
 
-// Licht-Uniform-Locations einmalig cachen â€” gl.getUniformLocation im Render-Loop
-// wÃ¤re zu teuer (N zusÃ¤tzliche String-Lookups pro Frame).
+// Licht-Uniform-Locations einmalig cachen — gl.getUniformLocation im Render-Loop
+// wäre zu teuer (N zusätzliche String-Lookups pro Frame).
 const lightPosLocs:   (WebGLUniformLocation | null)[] = [];
 const lightColorLocs: (WebGLUniformLocation | null)[] = [];
 for (let i = 0; i < MAX_LIGHTS; i++) {
@@ -66,7 +66,7 @@ for (let i = 0; i < MAX_LIGHTS; i++) {
 // 3. Geometrie
 // ---------------------------------------------------------------------------
 
-// Dichte UV-Kugel (200Ã—100 â‰ˆ 40â€¯k Dreiecke) â€” Fragment-Shader ist der Engpass,
+// Dichte UV-Kugel (200×100 ˜ 40?k Dreiecke) — Fragment-Shader ist der Engpass,
 // nicht der Vertex-Shader. So wird der Overhead durch viele Lichter sichtbar.
 const geo = createUvSphere(1, 200, 100);
 
@@ -89,7 +89,7 @@ const normalMat = mat3.create();
 const cameraPos = vec3.fromValues(0, 0, 2.5);
 mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
 
-/** Erzeugt Startfarben und Positionen fÃ¼r n Lichtquellen auf einer Kreisbahn. */
+/** Erzeugt Startfarben und Positionen für n Lichtquellen auf einer Kreisbahn. */
 function buildLights(n: number): { pos: Float32Array; col: Float32Array } {
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
@@ -123,7 +123,7 @@ let lights   = buildLights(params.numLights);
 
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1); // ms/Frame statt FPS anzeigen
-const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500 });
+const benchmark = new BenchmarkRun({ warmupMs: 1000, measureMs: 1, minFrames: 1000 });
 const gpuTimer  = new GlTimer(gl);
 const cpuTimer  = new CpuTimer();
 
@@ -167,9 +167,9 @@ async function render(now: number): Promise<void> {
   mat3.normalFromMat4(normalMat, model);
 
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  // CPU-Messung: Szene- + NÃ—2 Licht-Uniforms hochladen und Draw absetzen.
-  // Jeder gl.uniform*-Aufruf ist ein JSâ†’Native-Ãœbergang â€” der API-Overhead wÃ¤chst
-  // linear mit N (GegenstÃ¼ck zu WebGPUs einzelnem writeBuffer).
+  // CPU-Messung: Szene- + N×2 Licht-Uniforms hochladen und Draw absetzen.
+  // Jeder gl.uniform*-Aufruf ist ein JS?Native-Übergang — der API-Overhead wächst
+  // linear mit N (Gegenstück zu WebGPUs einzelnem writeBuffer).
   cpuTimer.begin();
   gl.useProgram(program);
 
@@ -182,8 +182,8 @@ async function render(now: number): Promise<void> {
   gl.uniform1f(U.uAmbient!,   0.05);
   gl.uniform1f(U.uShininess!, 64);
 
-  // Licht-Uniforms schreiben: N Ã— 2 gl.uniform3f-Aufrufe = messbarer API-Overhead.
-  // Jeder Aufruf ist ein JSâ†’Native-Ãœbergang â€” das ist der Kernunterschied zu WebGPU.
+  // Licht-Uniforms schreiben: N × 2 gl.uniform3f-Aufrufe = messbarer API-Overhead.
+  // Jeder Aufruf ist ein JS?Native-Übergang — das ist der Kernunterschied zu WebGPU.
   const n = Math.round(params.numLights);
   gl.uniform1i(U.uNumLights!, n);
   for (let i = 0; i < n; i++) {
@@ -212,7 +212,7 @@ async function render(now: number): Promise<void> {
   }
 
   stats.update();
-  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) â†’ Timer-Query verfÃ¼gbar
+  if (benchmark.isRunning) await glFenceAsync(gl); // GPU-Sync (async) ? Timer-Query verfügbar
   benchmark.sample(now, gpuTimer.takeSample() ?? undefined, cpuTimer.lastMs);
   requestAnimationFrame(render);
 }

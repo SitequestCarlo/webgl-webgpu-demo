@@ -98,7 +98,7 @@ const cpuTimer  = new CpuTimer();
 const gpuTimer  = new GlTimer(gl);
 const stats     = createStatsPanel(document.getElementById("app")!);
 stats.showPanel(1);
-const benchmark = new BenchmarkRun({ warmupMs: 1500, measureMs: 1, minFrames: 500, primary: "cpu" });
+const benchmark = new BenchmarkRun({ warmupMs: 1000, measureMs: 1, minFrames: 1000, primary: "cpu" });
 
 const gui = new GUI({ title: "Draw-Calls (WebGL)" });
 let pendingCapture = false;
