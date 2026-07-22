@@ -1,4 +1,4 @@
-// simulate.wgsl – CNC Z-Map Abtragssimulation (WebGPU Compute, Showcase 10)
+// simulate.wgsl – CNC Z-Map Abtragssimulation (WebGPU Compute, Showcase 11)
 // Berechnet pro Pixel ob das Werkzeug Material abtraegt und aktualisiert die Z-Map.
 // WG_SIZE=8 → 8×8 Threads pro Workgroup (optimaler Footprint für Quadrat-Dispatch).
 struct ToolUniforms {

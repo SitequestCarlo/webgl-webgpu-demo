@@ -2,7 +2,7 @@
  * Vollständiger Benchmark-Workflow: N Läufe sequenziell, danach Auswertung.
  *
  * Aufruf (via npm run — keine Flags nach -- nötig):
- *   npm run benchmark:full                              (5 Läufe, Standard)
+ *   npm run benchmark:full                              (1 Lauf, Standard)
  *   npm run benchmark:full --bench_runs=3               (3 Läufe)
  *   npm run benchmark:full --bench_filter=06            (nur 06-vertex)
  *   npm run benchmark:full --bench_filter=06 --bench_runs=2
@@ -33,14 +33,14 @@ const node = process.execPath;
 
 const argv = process.argv.slice(2);
 
-// --runs <n> oder npm run ... --bench_runs=<n>
+// --runs <n> oder npm run ... --bench_runs=<n>  (Standard: 1 Lauf)
 const runsIdx = argv.indexOf('--runs');
 const runsEnv = process.env.npm_config_bench_runs;
 const RUNS = runsIdx !== -1
-  ? Math.max(1, parseInt(argv[runsIdx + 1], 10) || 5)
+  ? Math.max(1, parseInt(argv[runsIdx + 1], 10) || 1)
   : runsEnv
-    ? Math.max(1, parseInt(runsEnv, 10) || 5)
-    : 5;
+    ? Math.max(1, parseInt(runsEnv, 10) || 1)
+    : 1;
 
 // Alle Argumente außer --runs <n> werden an run-benchmarks.mjs durchgereicht.
 // npm_config_bench_filter / npm_config_bench_api werden vom Kindprozess

@@ -152,7 +152,7 @@ const SHOWCASES = [
     param: {
       role: 'spinbutton',
       label: 'N Objekte',
-      values: [500, 1000, 2000, 5000, 10000, 20000, 40000],
+      values: [1000, 2000, 5000, 10000, 20000, 40000],
     },
   },
   {
@@ -191,7 +191,6 @@ const SHOWCASES = [
       webgpu: 'showcases/08-nbody/webgpu/index.html',
     },
     param: {
-      // lil-gui rendert Dropdown (<select>) für diskrete Werteliste
       role: 'combobox',
       label: 'N Partikel',
       values: [256, 512, 1024, 2048, 4096, 8192, 16384],
@@ -208,6 +207,21 @@ const SHOWCASES = [
       role: 'spinbutton',
       label: 'N Instanzen',
       values: [1000, 5000, 10000, 25000, 50000, 100000],
+    },
+  },
+  {
+    id: '10-transfer',
+    label: 'Buffer Transfer',
+    apis: {
+      webgl:  'showcases/10-transfer/webgl/index.html',
+      webgpu: 'showcases/10-transfer/webgpu/index.html',
+      'webgpu-opt': 'showcases/10-transfer/webgpu/index.html?opt=1',
+    },
+    param: {
+      // Puffergröße in MB; Metrik ist CPU-Transfer-Latenz (metric=cpu), Richtung=roundtrip.
+      role: 'combobox',
+      label: 'Puffergröße (MB)',
+      values: [1, 4, 16, 64, 256],
     },
   },
 ];
@@ -415,14 +429,14 @@ async function main() {
       console.log(`  ⚠  Kein Showcase gefunden für --filter ${onlyArg}`);
       console.log(`  Verfügbar: ${SHOWCASES.map(s => s.id).join(', ')}`);
     }
-    const activeApis = /** @type {('webgl'|'webgpu')[]} */ (
-      apiFilter ? [apiFilter] : ['webgl', 'webgpu']
-    );
-
     for (const showcase of activeShowcases) {
       console.log(`\n${'─'.repeat(60)}`);
       console.log(`  ${showcase.label}  (${showcase.id})`);
       console.log('─'.repeat(60));
+
+      // Varianten dieses Showcases: webgl/webgpu + optional weitere (z. B. webgpu-opt)
+      const allApis = Object.keys(showcase.apis);
+      const activeApis = apiFilter ? allApis.filter(a => a === apiFilter) : allApis;
 
       for (const api of activeApis) {
         if (!showcase.apis[api]) continue; // API nicht vorhanden für diesen Showcase
@@ -450,7 +464,8 @@ async function main() {
           try {
             // Wert direkt über Query-Param setzen (?v=) – kein lil-gui-Slider-Setzen mehr,
             // das bei großen N-Werten langsam/fragil war und die Messung verfälschte.
-            await page.goto(`${url}?v=${n}`, { waitUntil: 'networkidle', timeout: 30_000 });
+            const sep = url.includes('?') ? '&' : '?';
+            await page.goto(`${url}${sep}v=${n}`, { waitUntil: 'networkidle', timeout: 30_000 });
             // stats.js erzeugt 3 weitere <canvas>-Elemente — #gl ist eindeutig der Render-Canvas
             await page.locator('#gl').waitFor({ state: 'visible', timeout: 15_000 });
             // Warten bis die Render-Loop tatsächlich läuft (WebGPU-Device-Init ist async).

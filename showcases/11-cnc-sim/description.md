@@ -1,4 +1,4 @@
-# 10 · CNC-Abtragsimulation
+# 11 · CNC-Abtragsimulation
 
 **WebGPU Compute** – Echtzeit-Materialabtrag via Z-Map (Dexel-Verfahren).
 

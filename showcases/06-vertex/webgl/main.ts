@@ -12,8 +12,13 @@ import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { splitGLSL } from "../../../src/shared/splitGLSL";
 import vertexSimpleGlsl from "../shaders/gl/vertex-simple.glsl?raw";
+import vertexHeavyGlsl  from "../shaders/gl/vertex-heavy.glsl?raw";
 
 const BENCH_FS_GLSL = splitGLSL(vertexSimpleGlsl)[1];
+// splitGLSL liefert den VS-Abschnitt inkl. führender Kommentare; `#version` MUSS aber
+// die erste Zeile sein (ANGLE lehnt Kommentare davor ab) → auf #version zuschneiden.
+const _rawHeavyVS   = splitGLSL(vertexHeavyGlsl)[0];
+const VS_HEAVY      = _rawHeavyVS.slice(Math.max(0, _rawHeavyVS.indexOf("#version")));
 
 const VS_SIMPLE = /* glsl */`#version 300 es
 precision highp float;
@@ -33,10 +38,13 @@ const resultsEl = document.getElementById("results") as HTMLDivElement;
 const gl = getWebGL2(canvas);
 gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.clearColor(0.06, 0.07, 0.09, 1);
 
+const UNIF_NAMES = ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess"] as const;
 const programSimple = createProgram(gl, VS_SIMPLE, BENCH_FS_GLSL);
-const uSimple = getUniforms(gl, programSimple, ["uModel","uView","uProj","uNormalMatrix","uColor","uLightPos","uViewPos","uLightColor","uAmbient","uShininess"] as const);
-let program = programSimple;
-let U       = uSimple;
+const programHeavy  = createProgram(gl, VS_HEAVY,  BENCH_FS_GLSL);
+const uSimple = getUniforms(gl, programSimple, UNIF_NAMES);
+const uHeavy  = getUniforms(gl, programHeavy,  UNIF_NAMES);
+let program = programHeavy; // Heavy-VS ist Default: vertex-ALU-bound + triggert GPU-Boost
+let U       = uHeavy;
 
 const proj = mat4.create(), view = mat4.create(), model = mat4.create(), normalMat = mat3.create();
 const cameraPos = vec3.fromValues(0, 0, 3), lightPos = vec3.fromValues(4, 6, 4);
@@ -60,7 +68,7 @@ function buildMesh(segments: number, rings: number): void {
   gl.bindVertexArray(null);
 }
 
-const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true, heavyVS: true };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!);
@@ -76,6 +84,7 @@ const triCtrl = gui.add({ tri: "–" }, "tri").name("Dreiecke").disable();
 gui.add(params, "segments", 10, 20000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
 gui.add(params, "autoRotate").name("Rotation");
+gui.add(params, "heavyVS").name("Heavy VS (8×sin/cos)").onChange((v: boolean) => { program = v ? programHeavy : programSimple; U = v ? uHeavy : uSimple; });
 gui.add({ run: async () => {
   resultsEl.style.display = "block";
   resultsEl.textContent = `Messe ${(currentTriCount/1000).toFixed(0)}k Dreiecke ...`;
@@ -115,9 +124,15 @@ async function render(now: number): Promise<void> {
   // GPU-TIMING: asynchrone Timestamp-Query misst die echte GPU-Zeit dieses
   // Draw-Calls, ohne den CPU-Thread zu blockieren.
   gl.bindVertexArray(currentVao);
+  // Vertex-bound-Messung: Fragment-Last per 1×1-Scissor eliminieren (nur während
+  // des Benchmarks). Der Vertex-Shader läuft weiterhin für ALLE Vertices; nur die
+  // Fragment-Fläche wird auf ~1 Pixel begrenzt → kein Fragment-/Fill-Rate-Confound.
+  // Der Scissor wird NACH dem vollen gl.clear() gesetzt, damit nur der Draw betroffen ist.
+  if (benchmark.isRunning) { gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 1, 1); }
   gpuTimer.begin();
   gl.drawElements(gl.TRIANGLES, currentIndexCount, gl.UNSIGNED_INT, 0);
   gpuTimer.end();
+  if (benchmark.isRunning) gl.disable(gl.SCISSOR_TEST);
   gl.bindVertexArray(null);
   cpuTimer.end();
   // Screenshot-Trigger (einmalig nach Button-Klick)

@@ -86,7 +86,7 @@ export interface SampleStats {
   maxMs: number;
 }
 
-function computeStats(samples: number[]): SampleStats {
+export function computeStats(samples: number[]): SampleStats {
   const sorted = [...samples].sort((a, b) => a - b);
   const n = sorted.length;
   const sum = sorted.reduce((s, v) => s + v, 0);
@@ -244,6 +244,47 @@ export class BenchmarkRun {
     (window as unknown as Record<string, unknown>)['__benchmarkResult'] = result;
     window.dispatchEvent(new CustomEvent('benchmarkComplete', { detail: result }));
   }
+}
+
+// Baut ein BenchmarkResult aus einem rohen Sample-Array (z. B. N Compile-Zeiten
+// oder Transfer-Latenzen). Für Showcases, die KEINE Per-Frame-Steady-State-Last
+// messen, sondern Einzel-Latenzen/Durchsatz — liefert dasselbe Format wie
+// BenchmarkRun, damit Runner (window.__benchmarkResult + benchmarkComplete-Event)
+// und CSV-Export unverändert funktionieren.
+//
+//   metric "cpu"  → Wall-Clock-Latenz (Compile, Upload, Readback)
+//   metric "gpu"  → GPU-Ausführungszeit (Timestamp-Query)
+// Die jeweils andere Dimension bleibt undefined (erwartet, sichtbar in der CSV).
+export function resultFromSamples(
+  samples: number[],
+  metric: "cpu" | "gpu",
+): BenchmarkResult {
+  const stats = computeStats(samples.length ? samples : [0]);
+  const sum = samples.reduce((s, v) => s + v, 0);
+  return {
+    metric,
+    frames: samples.length,
+    durationMs: sum,
+    avgFps: stats.avgMs > 0 ? 1000 / stats.avgMs : 0,
+    avgMs: stats.avgMs,
+    medMs: stats.medMs,
+    p5Ms: stats.p5Ms,
+    p95Ms: stats.p95Ms,
+    minMs: stats.minMs,
+    maxMs: stats.maxMs,
+    cpu: metric === "cpu" ? stats : undefined,
+    gpu: metric === "gpu" ? stats : undefined,
+    frame: stats,
+    cpuCount: metric === "cpu" ? samples.length : 0,
+    gpuCount: metric === "gpu" ? samples.length : 0,
+  };
+}
+
+// Meldet ein extern gemessenes BenchmarkResult an den Runner (identisch zum Pfad
+// in BenchmarkRun.finish): setzt window.__benchmarkResult + feuert das Event.
+export function reportBenchmarkResult(result: BenchmarkResult): void {
+  (window as unknown as Record<string, unknown>)['__benchmarkResult'] = result;
+  window.dispatchEvent(new CustomEvent('benchmarkComplete', { detail: result }));
 }
 
 const METRIC_LABEL: Record<BenchmarkResult["metric"], string> = {

@@ -218,15 +218,26 @@ const SHOWCASE_LABELS = {
   '07-lights':    'Viele Lichtquellen',
   '08-nbody':     'N-Körper-Simulation',
   '09-instancing':'Instanziertes Rendering',
+  '10-transfer':  'Puffer-Transfer',
 };
 
 const X_AXIS_LABELS = {
-  '05-drawcalls': 'Anzahl W\u00fcrfel',
-  '06-vertex':    'Anzahl Vertices',
+  '05-drawcalls': 'Anzahl Würfel',
+  '06-vertex':    'Segmente',
   '07-lights':    'Anzahl Lichtquellen',
   '08-nbody':     'Anzahl Teilchen',
   '09-instancing':'Anzahl Instanzen',
+  '10-transfer':  'Puffergröße (MB)',
 };
+
+// Y-Achsen-Beschriftung je Showcase (Default: Frame-Zeit). 10-transfer misst keine
+// Frame-Zeit, sondern Latenz pro Transfer.
+const Y_AXIS_LABELS = {
+  '10-transfer': 'Zeit pro Transfer (ms)',
+};
+
+// 10-transfer: 2 einfache Balken pro N (kein gestapelter GPU-Stack), lineare Y-Achse.
+const LOG_Y = new Set(['10-transfer']);
 
 const METRIC_UNIT = { cpu: 'CPU-Zeit', gpu: 'GPU-Zeit', frame: 'Frame-Zeit' };
 
@@ -269,6 +280,11 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
 
   const label    = SHOWCASE_LABELS[showcaseId] || showcaseId;
   const xLabel   = X_AXIS_LABELS[showcaseId]   || 'N';
+  const yLabel   = Y_AXIS_LABELS[showcaseId]   || 'Zeit pro Frame (ms)';
+  const useLog   = false; // Log-Achse deaktiviert — lineare Skala für alle Showcases
+  const yType    = 'linear';
+  const useCpuBars = LOG_Y.has(showcaseId); // 10-transfer: 2 einfache CPU-Balken statt gestapelt
+  const stacked  = !useCpuBars;
   const allNs  = [...new Set(
     Object.values(apis).flatMap(a => Object.keys(a).map(Number))
   )].sort((a, b) => a - b);
@@ -293,9 +309,15 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
 
   const glEb = ebTotal(glGpuP5s, glGpuP95s, glCpuP5s, glCpuP95s);
   const gpEb = ebTotal(gpGpuP5s, gpGpuP95s, gpCpuP5s, gpCpuP95s);
-  const allHis = [...glEb, ...gpEb].map(e => e?.hi).filter(v => v != null && Number.isFinite(v));
-  const yMax   = allHis.length ? Math.max(...allHis) * 1.15 : undefined;
 
+  // Y-Achsen-Maximum: 5 % über dem höchsten sichtbaren Punkt (Whisker-Tip oder Balkenhöhe),
+  // damit Whisker vollständig sichtbar sind, aber ohne übermäßigen Leerraum.
+  const allTops = useCpuBars
+    // CPU-only Showcases: kein Whisker, höchste Balkenhöhe
+    ? [...glCpuMeds, ...gpCpuMeds].filter(v => v != null && Number.isFinite(v))
+    // Gestapelte GPU+CPU: Whisker-Tips (gpuP95+cpuP95); falls keine, Balkenhöhen
+    : [...glEb, ...gpEb].map(e => e?.hi).filter(v => v != null && Number.isFinite(v));
+  const ySuggestedMax = allTops.length ? Math.max(...allTops) * 1.05 : undefined;
   const unitLabel = METRIC_UNIT[(Object.values(gl)[0] || Object.values(gpu)[0])?.metric || 'gpu'];
   const safeId    = showcaseId.replace(/[^a-z0-9]/g, '_') + idSuffix;
   const labels    = allNs.map(String);
@@ -316,30 +338,48 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
     plugins: [errorBarPlugin],
     data: {
       labels: ${JSON.stringify(labels)},
-      datasets: [
+      datasets: ${useCpuBars
+        // CPU-Metrik-Showcases (10-transfer): nur je 1 Balken pro API, kein leerer GPU-Stack.
+        ? JSON.stringify([
+          {
+            label: 'WebGL',  categoryPercentage: 0.7, barPercentage: 0.9,
+            data: glCpuMeds,
+            errorBars: glEb,
+            backgroundColor: 'rgba(183,0,119,0.7)', borderColor: 'rgba(140,0,90,1)', borderWidth: 1,
+          },
+          {
+            label: 'WebGPU', categoryPercentage: 0.7, barPercentage: 0.9,
+            data: gpCpuMeds,
+            errorBars: gpEb,
+            backgroundColor: 'rgba(26,115,232,0.7)', borderColor: 'rgba(15,80,180,1)', borderWidth: 1,
+          },
+        ])
+        // GPU-Metrik-Showcases: gestapelte CPU+GPU-Balken wie bisher.
+        : `[
         {
-          label: 'WebGL – GPU-Zeit', stack: 'webgl', order: 2,
+          label: 'WebGL \u2013 GPU-Zeit', stack: 'webgl', order: 2,
           data: ${JSON.stringify(glGpuMeds)},
           backgroundColor: 'rgba(183,0,119,0.85)', borderColor: 'rgba(140,0,90,1)', borderWidth: 1,
         },
         {
-          label: 'WebGL – CPU-Zeit', stack: 'webgl', order: 1,
+          label: 'WebGL \u2013 CPU-Zeit', stack: 'webgl', order: 1,
           data: ${JSON.stringify(glCpuMeds)},
           errorBars: ${JSON.stringify(ebTotal(glGpuP5s, glGpuP95s, glCpuP5s, glCpuP95s))},
           backgroundColor: 'rgba(183,0,119,0.35)', borderColor: 'rgba(140,0,90,0.7)', borderWidth: 1,
         },
         {
-          label: 'WebGPU – GPU-Zeit', stack: 'webgpu', order: 2,
+          label: 'WebGPU \u2013 GPU-Zeit', stack: 'webgpu', order: 2,
           data: ${JSON.stringify(gpGpuMeds)},
           backgroundColor: 'rgba(26,115,232,0.85)', borderColor: 'rgba(15,80,180,1)', borderWidth: 1,
         },
         {
-          label: 'WebGPU – CPU-Zeit', stack: 'webgpu', order: 1,
+          label: 'WebGPU \u2013 CPU-Zeit', stack: 'webgpu', order: 1,
           data: ${JSON.stringify(gpCpuMeds)},
           errorBars: ${JSON.stringify(ebTotal(gpGpuP5s, gpGpuP95s, gpCpuP5s, gpCpuP95s))},
           backgroundColor: 'rgba(26,115,232,0.35)', borderColor: 'rgba(15,80,180,0.7)', borderWidth: 1,
         }
-      ]
+        ]`
+      }
     },
     options: {
       responsive: true,
@@ -352,12 +392,13 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
         x: {
           title: { display: true, text: ${JSON.stringify(xLabel)}, font: { size: 13 } },
           grid:  { color: '#e5e7eb' },
-          stacked: true,
+          stacked: ${stacked},
         },
         y: {
-          stacked: true,
-          suggestedMax: ${JSON.stringify(yMax)},
-          title: { display: true, text: 'Zeit pro Frame (ms)', font: { size: 13 } },
+          stacked: ${stacked},
+          type: '${yType}',
+          suggestedMax: ${JSON.stringify(ySuggestedMax)},
+          title: { display: true, text: ${JSON.stringify(yLabel)}, font: { size: 13 } },
           grid:  { color: '#e5e7eb' },
           ticks: { callback: (v) => v + ' ms' }
         }
@@ -373,8 +414,8 @@ function buildChartSection(showcaseId, dataSource = data, titleSuffix = '', idSu
 
 const VARIANTS = [
   { key: 'Med',        suffix: '_med',    filename: 'med',     label: ' – Median' },
-  { key: 'TrimMean10', suffix: '_trim10', filename: 'trim10',  label: ' – 10 % getrimmter Mittelwert (p5–p95)' },
-  { key: 'TrimMean20', suffix: '_trim20', filename: 'trim20',  label: ' – 20 % getrimmter Mittelwert (p10–p90)' },
+  { key: 'TrimMean10', suffix: '_trim10', filename: 'trim10',  label: ' – 10 % getrimmter Mittelwert (p5–p95)' },
+  { key: 'TrimMean20', suffix: '_trim20', filename: 'trim20',  label: ' – 20 % getrimmter Mittelwert (p10–p90)' },
 ];
 
 const showcaseIds  = Object.keys(dataAgg).sort();

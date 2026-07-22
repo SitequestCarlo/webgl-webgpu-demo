@@ -122,10 +122,19 @@ export const registry: ShowcaseEntry[] = [
   },
 
   {
-    id: '10-cnc-sim', num: '10', title: 'CNC-Abtragsimulation',
+    id: '10-transfer', num: '10', title: 'Buffer Transfer',
+    category: 'performance', tags: ['Bandbreite', 'Upload', 'Readback', 'Staging', 'mapAsync'],
+    webgl:  './showcases/10-transfer/webgl/index.html',
+    webgpu: './showcases/10-transfer/webgpu/index.html',
+    shaderBase: '/showcases/10-transfer',
+    fileOrder: { webgl: ['main.ts'], webgpu: ['main.ts'] },
+  },
+
+  {
+    id: '11-cnc-sim', num: '11', title: 'CNC-Abtragsimulation',
     category: 'compute', tags: ['Compute', 'Z-Map', 'Dexel', 'Höhenfeld', 'MSAA'],
-    webgpu: './showcases/10-cnc-sim/index.html',
-    shaderBase: '/showcases/10-cnc-sim/shaders',
+    webgpu: './showcases/11-cnc-sim/index.html',
+    shaderBase: '/showcases/11-cnc-sim/shaders',
     fileOrder: {
       webgpu: ['simulate.wgsl', 'heightfield.wgsl', 'tool.wgsl', 'main.ts'],
     },

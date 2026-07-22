@@ -12,7 +12,8 @@ import { getWebGPU, resizeWebGPUCanvas, createDepthTexture, createGPUVertexBuffe
 import { createUvSphere } from "../../../src/shared/geometry";
 import { createStatsPanel, BenchmarkRun, formatResult, CpuTimer, readBenchmarkValue } from "../../../src/shared/benchmark";
 import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
-import BENCH_WGSL   from "../shaders/gpu/vertex-simple.wgsl?raw";
+import BENCH_WGSL       from "../shaders/gpu/vertex-simple.wgsl?raw";
+import BENCH_HEAVY_WGSL from "../shaders/gpu/vertex-heavy.wgsl?raw";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
 const resultsEl = document.getElementById("results") as HTMLDivElement;
@@ -21,6 +22,7 @@ const { device, context, format } = await getWebGPU(canvas);
 const sceneBGL = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }]});
 const drawBGL  = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: DRAW_UNIFORM_SIZE } }]});
 const shader      = device.createShaderModule({ code: BENCH_WGSL });
+const shaderHeavy = device.createShaderModule({ code: BENCH_HEAVY_WGSL });
 function makePipeline(mod: GPUShaderModule): GPURenderPipeline {
   return device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [sceneBGL, drawBGL] }),
@@ -31,7 +33,8 @@ function makePipeline(mod: GPUShaderModule): GPURenderPipeline {
   });
 }
 const pipelineSimple = makePipeline(shader);
-let pipeline = pipelineSimple;
+const pipelineHeavy  = makePipeline(shaderHeavy);
+let pipeline = pipelineHeavy; // Heavy-VS ist Default: vertex-ALU-bound + triggert GPU-Boost
 
 const sceneUB = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const sceneData = new Float32Array(64);
@@ -61,7 +64,7 @@ function buildMesh(seg: number, rings: number): void {
   indexCount = geo.indexCount; triCount = geo.indexCount / 3;
 }
 
-const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true };
+const params = { segments: readBenchmarkValue() ?? 200, rings: 16, autoRotate: true, heavyVS: true };
 buildMesh(params.segments, params.rings);
 
 const stats = createStatsPanel(document.getElementById("app")!); stats.showPanel(1);
@@ -76,6 +79,7 @@ const msCtrl  = gui.add({ ms: supportsTs ? "– ms (GPU)" : "– ms" }, "ms").na
 gui.add(params, "segments", 10, 20000, 1).name("Segmente").onFinishChange(() => buildMesh(params.segments, params.rings));
 gui.add(params, "rings",    10, 1000, 1).name("Ringe").onFinishChange(()    => buildMesh(params.segments, params.rings));
 gui.add(params, "autoRotate").name("Rotation");
+gui.add(params, "heavyVS").name("Heavy VS (8×sin/cos)").onChange((v: boolean) => { pipeline = v ? pipelineHeavy : pipelineSimple; });
 gui.add({ run: async () => {
   resultsEl.style.display = "block";
   resultsEl.textContent = `Messe ${(triCount/1000).toFixed(0)}k Dreiecke ...`;
@@ -118,6 +122,10 @@ async function render(now: number): Promise<void> {
     timestampWrites: gpuTimer.writesBoth,
   };
   const pass = cmd.beginRenderPass(rpDesc);
+  // Vertex-bound-Messung: Fragment-Last per 1×1-Scissor eliminieren (nur während
+  // des Benchmarks). Der Vertex-Shader läuft weiterhin für ALLE Vertices; nur die
+  // Fragment-Fläche wird auf ~1 Pixel begrenzt → kein Fragment-/Fill-Rate-Confound.
+  if (benchmark.isRunning) pass.setScissorRect(0, 0, 1, 1);
   pass.setPipeline(pipeline);
   pass.setVertexBuffer(0, vb!);
   pass.setIndexBuffer(ib!, "uint32");

@@ -1,0 +1,6 @@
+﻿showcase;api;n;metric;frames;durationMs;avgFps;avgMs;medMs;p5Ms;p95Ms;minMs;maxMs;cpuAvgMs;cpuMedMs;cpuTrimMean10Ms;cpuTrimMean20Ms;cpuP5Ms;cpuP95Ms;cpuMinMs;cpuMaxMs;gpuAvgMs;gpuMedMs;gpuTrimMean10Ms;gpuTrimMean20Ms;gpuP5Ms;gpuP95Ms;gpuMinMs;gpuMaxMs
+10-transfer;webgpu-opt;1;cpu;8;20,2;396,76;2,520;2,268;2,054;4,120;2,054;4,120;2,520;2,268;2,520;2,520;2,054;4,120;2,054;4,120;;;;;;;;
+10-transfer;webgpu-opt;4;cpu;8;87,5;91,40;10,941;9,488;7,555;17,966;7,555;17,966;10,941;9,488;10,941;10,941;7,555;17,966;7,555;17,966;;;;;;;;
+10-transfer;webgpu-opt;16;cpu;8;547,9;14,60;68,486;66,672;41,331;97,519;41,331;97,519;68,486;66,672;68,486;68,486;41,331;97,519;41,331;97,519;;;;;;;;
+10-transfer;webgpu-opt;64;cpu;8;1423,1;5,62;177,884;183,150;74,950;281,500;74,950;281,500;177,884;183,150;177,884;177,884;74,950;281,500;74,950;281,500;;;;;;;;
+10-transfer;webgpu-opt;256;cpu;8;3731,6;2,14;466,450;458,050;405,000;597,300;405,000;597,300;466,450;458,050;466,450;466,450;405,000;597,300;405,000;597,300;;;;;;;;

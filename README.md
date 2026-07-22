@@ -26,13 +26,14 @@ Benchmarks die gezielt API-Overhead, Vertex-Throughput, Fragment-Last und Comput
 | 07 | **Multi-Light** | N Punktlichter im Fragment-Shader vs. Storage-Buffer-Loop |
 | 08 | **N-Body Simulation** | O(N²) Gravitation – WebGL Fragment-Shader-Hack vs. WebGPU Compute |
 | 09 | **Instanced Rendering** | 1 Draw-Call, N Instanzen via Storage Buffer / Instanz-Attribut |
+| 10 | **Buffer Transfer** | Upload-/Readback-Durchsatz skalierender Puffer – writeBuffer/mapAsync vs. bufferData/getBufferSubData |
 
 ### Compute
 WebGPU-exklusive Compute-Shader-Demos ohne WebGL-Entsprechung.
 
 | # | Showcase | Inhalt |
 |---|---|---|
-| 10 | **CNC-Abtragsimulation** | Z-Map-basierter Materialabtrag per Compute-Shader, MSAA-Rendering |
+| 11 | **CNC-Abtragsimulation** | Z-Map-basierter Materialabtrag per Compute-Shader, MSAA-Rendering |
 
 ## Bedienung
 

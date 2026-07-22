@@ -100,7 +100,7 @@ function median(arr) {
 /** @type {Map<string, Array<{n:number, api:string, cpu:number|null, gpu:number|null, frame:number|null}>>} */
 const byShowcase = new Map();
 for (const [sh, apis] of Object.entries(allRuns)) {
-  for (const api of ['webgl', 'webgpu']) {
+  for (const api of ['webgl', 'webgpu', 'webgpu-opt']) {
     const ns = apis[api];
     if (!ns) continue;
     for (const [n, rows] of Object.entries(ns)) {
@@ -124,7 +124,17 @@ const de = (v) => {
   return v.toFixed(3).replace('.', ',');
 };
 
-const API_LABEL = { webgl: 'WebGL', webgpu: 'WebGPU' };
+const API_LABEL = { webgl: 'WebGL', webgpu: 'WebGPU', 'webgpu-opt': 'WebGPU (opt)' };
+const API_ORDER = { webgl: 0, webgpu: 1, 'webgpu-opt': 2 };
+// Spaltenüberschrift je Showcase = tatsächlich skalierte Größe (statt generisch 'N').
+const AXIS_LABEL = {
+  '05-drawcalls': 'Anzahl Würfel',
+  '06-vertex':    'Segmente',
+  '07-lights':    'Anzahl Lichtquellen',
+  '08-nbody':     'Anzahl Teilchen',
+  '09-instancing':'Anzahl Instanzen',
+  '10-transfer':  'Puffergröße (MB)',
+};
 const SEP = ';';
 const BOM = '\uFEFF';
 
@@ -135,10 +145,10 @@ const BOM = '\uFEFF';
 const written = [];
 
 for (const [showcase, rows] of byShowcase) {
-  // Nach N aufsteigend, innerhalb N: WebGL vor WebGPU
-  rows.sort((a, b) => a.n - b.n || (a.api === 'webgl' ? -1 : 1));
+  // Nach N aufsteigend, innerhalb N: WebGL, WebGPU, WebGPU (opt)
+  rows.sort((a, b) => a.n - b.n || (API_ORDER[a.api] ?? 9) - (API_ORDER[b.api] ?? 9));
 
-  const out = [`N${SEP}API${SEP}CPU (ms)${SEP}GPU (ms)`];
+  const out = [`${AXIS_LABEL[showcase] || 'N'}${SEP}API${SEP}CPU (ms)${SEP}GPU (ms)`];
   for (const r of rows) {
     out.push([r.n, API_LABEL[r.api] ?? r.api, de(r.cpu), de(r.gpu)].join(SEP));
   }
