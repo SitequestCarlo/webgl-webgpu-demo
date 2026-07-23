@@ -152,7 +152,7 @@ const SHOWCASES = [
     param: {
       role: 'spinbutton',
       label: 'N Objekte',
-      values: [1000, 2000, 5000, 10000, 20000, 40000],
+      values: [500, 1000, 2000, 5000, 10000, 20000],
     },
   },
   {
@@ -236,7 +236,7 @@ const CSV_HEADER = 'showcase;api;n;metric;frames;durationMs;avgFps;avgMs;medMs;p
 function toCsvRow(cells) {
   return cells
     .map(c => {
-      const s = String(c ?? '');
+      const s = String(c ?? '').replace(/\r?\n/g, ' ');
       return s.includes(';') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
     })
     .join(';');

@@ -74,7 +74,7 @@ const data = {};
 for (let i = 1; i < lines.length; i++) {
   const row = lines[i].split(';');
   const showcase = row[iShowcase];
-  if (!showcase || row[iMetric] === 'error') continue;
+  if (!showcase || !/^\d{2}-/.test(showcase) || row[iMetric] === 'error') continue;
   const api    = row[iApi];
   const n      = Number(row[iN]);
   const metric = row[iMetric] || 'gpu';
@@ -119,7 +119,7 @@ function collectRows(filePath) {
   for (let i = 1; i < ls.length; i++) {
     const row = ls[i].split(';');
     const showcase = row[iSh];
-    if (!showcase || row[iMe] === 'error') continue;
+    if (!showcase || !/^\d{2}-/.test(showcase) || row[iMe] === 'error') continue;
     const api = row[iAp];
     const n   = Number(row[iNn]);
     const nf  = (idx) => { if (idx < 0 || !row[idx]) return null; const v = Number(row[idx].replace(',', '.')); return Number.isFinite(v) ? v : null; };

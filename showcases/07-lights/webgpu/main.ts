@@ -163,10 +163,10 @@ async function render(now: number): Promise<void> {
   const colorView = context.getCurrentTexture().createView();
 
   // CPU-Messung: alle N Lichter mit EINEM writeBuffer hochladen + Record+Submit.
-  // Gegenst�ck ist WebGLs N � gl.uniform3f � hier sichtbar als CPU-Overhead-Vergleich.
+  // Gegenstück ist WebGLs N × gl.uniform3f – hier sichtbar als CPU-Overhead-Vergleich.
   cpuTimer.begin();
-  // Licht-Storage-Buffer bef�llen: 1 writeBuffer-Aufruf f�r alle N Lichter �
-  // konstanter JS-Overhead, unabh�ngig von N (vs. WebGL: N separate gl.uniform3f-Calls).
+  // Licht-Storage-Buffer befüllen: 1 writeBuffer-Aufruf für alle N Lichter –
+  // konstanter JS-Overhead, unabhängig von N (vs. WebGL: N separate gl.uniform3f-Calls).
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + angle * 0.5;
     const r = 1.5 + 0.5 * Math.sin(i * 2.3);
@@ -179,7 +179,7 @@ async function render(now: number): Promise<void> {
   }
   device.queue.writeBuffer(lightBuf, 0, lightData.subarray(0, n * LIGHT_STRIDE));
 
-  // Szene-Uniform-Buffer bef�llen (Matrizen, Kamera, Material, numLights)
+  // Szene-Uniform-Buffer befüllen (Matrizen, Kamera, Material, numLights)
   sceneData.set(view,  0); sceneData.set(proj, 16); sceneData.set(model, 32); sceneData.set(nm4, 48);
   sceneData[64] = cameraPos[0]; sceneData[65] = cameraPos[1]; sceneData[66] = cameraPos[2];
   sceneData[68] = 0.05;  // ambient

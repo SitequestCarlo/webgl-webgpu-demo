@@ -16,7 +16,7 @@ import {
 } from "../../../src/shared/webgpu";
 import { createCube } from "../../../src/shared/geometry";
 import { CpuTimer, createStatsPanel, BenchmarkRun, formatResult, readBenchmarkValue } from "../../../src/shared/benchmark";
-import { DRAW_UNIFORM_SIZE, writeDrawUniform } from "../../../src/shared/drawUtils";
+import { DRAW_UNIFORM_SIZE } from "../../../src/shared/drawUtils";
 import BENCH_WGSL from "../shaders/gpu/blinn-phong.wgsl?raw";
 
 const canvas    = document.getElementById("gl") as HTMLCanvasElement;
@@ -168,19 +168,16 @@ async function render(now: number): Promise<void> {
     drawData[fo + 35] = 1.0;
   }
 
-  // writeBuffer VOR cpuTimer: ist kein Draw-Call-Overhead, sondern Daten-Upload
-  // (äquivalent zu WebGLs uniformMatrix4fv-Uploads, die im Loop stattfinden).
-  device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
-
   // Swapchain-Textur VOR der CPU-Messung holen: getCurrentTexture() kann durch
   // Present-Back-Pressure blockieren; das ist kein API-Overhead und würde die
   // CPU-Zeit verfälschen.
   const colorView = context.getCurrentTexture().createView();
 
-  // MESSUNG: Command-Buffer aufzeichnen + submit.
-  // Erfasst: createCommandEncoder + beginRenderPass + N×(setBindGroup+drawIndexed) + end+finish+submit.
+  // MESSUNG: writeBuffer (Daten-Upload, äquivalent zu WebGLs N×uniformMatrix4fv)
+  // + Command-Buffer aufzeichnen + submit.
   // dynOffsets ist persistent vorab-alloziert → kein GC-Druck im Hot-Loop.
   cpuTimer.begin();
+  device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
 
   // Command-Buffer zusammensetzen: N setBindGroup + drawIndexed, dann 1 submit()
   const cmd  = device.createCommandEncoder();
