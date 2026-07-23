@@ -108,8 +108,8 @@ async function render(now: number): Promise<void> {
   if (params.autoRotate) angle += dt * 0.5;
   mat4.identity(model); mat4.rotateY(model, model, angle);
   mat3.normalFromMat4(normalMat, model);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   cpuTimer.begin();
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.useProgram(program);
   gl.uniformMatrix4fv(U.uModel!, false, model);
   gl.uniformMatrix4fv(U.uView!, false, view);
