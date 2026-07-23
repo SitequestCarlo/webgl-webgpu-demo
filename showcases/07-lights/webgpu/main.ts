@@ -47,13 +47,14 @@ const SCENE_SIZE = 512;
 const sceneUB   = device.createBuffer({ size: SCENE_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const sceneData = new Float32Array(SCENE_SIZE / 4);
 
-// Light Storage Buffer: MAX_LIGHTS � 32 Bytes (pos:vec4 + col:vec4)
-// Storage Buffer ? kein compile-time Limit, im Fragment-Shader direkt zugreifbar
-const LIGHT_STRIDE = 8; // 2�vec4 = 8 Floats = 32 Bytes
+// Light Uniform Buffer: MAX_LIGHTS × 32 Bytes = 32 KB (< 64 KB WebGPU-Mindestlimit).
+// Uniform Buffer → dedizierter Constant-Cache der GPU (Broadcast-Read-optimiert),
+// identisches Verhalten wie WebGLs uniform-Arrays.
+const LIGHT_STRIDE = 8; // 2×vec4 = 8 Floats = 32 Bytes
 const lightData = new Float32Array(MAX_LIGHTS * LIGHT_STRIDE);
 const lightBuf  = device.createBuffer({
-  size:  MAX_LIGHTS * 32,
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  size:  MAX_LIGHTS * 32,  // 1024 × 32 = 32768 Bytes
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
 
 // ---------------------------------------------------------------------------
@@ -62,9 +63,9 @@ const lightBuf  = device.createBuffer({
 
 const bgl = device.createBindGroupLayout({ entries: [
   { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-    buffer: { type: "uniform" } },            // Szene-Uniforms
+    buffer: { type: "uniform" } },   // Szene-Uniforms
   { binding: 1, visibility: GPUShaderStage.FRAGMENT,
-    buffer: { type: "read-only-storage" } },   // Licht-Storage-Buffer
+    buffer: { type: "uniform" } },   // Licht-Uniform-Buffer (Constant-Cache)
 ]});
 
 const shader   = device.createShaderModule({ code: ML_WGSL });
@@ -102,8 +103,7 @@ function hsl(h: number, s: number, l: number): [number, number, number] {
   return [r + m, g + m, b + m];
 }
 
-// Lichtfarben einmalig berechnen (unverlndert w�hrend der Laufzeit)
-const lightColors = Array.from({ length: MAX_LIGHTS }, (_, i) => hsl((i / MAX_LIGHTS) * 360, 1, 0.6));
+
 
 let depth = createDepthTexture(device, 1, 1);
 
@@ -165,17 +165,19 @@ async function render(now: number): Promise<void> {
   // CPU-Messung: alle N Lichter mit EINEM writeBuffer hochladen + Record+Submit.
   // Gegenstück ist WebGLs N × gl.uniform3f – hier sichtbar als CPU-Overhead-Vergleich.
   cpuTimer.begin();
-  // Licht-Storage-Buffer befüllen: 1 writeBuffer-Aufruf für alle N Lichter –
-  // konstanter JS-Overhead, unabhängig von N (vs. WebGL: N separate gl.uniform3f-Calls).
+  // Licht-Uniform-Buffer befüllen: 1 writeBuffer-Aufruf für alle N Lichter.
+  // Farben gleichmäßig über die aktiven n Lichter verteilen (i/n, nicht i/MAX_LIGHTS),
+  // identisch zur WebGL-Implementierung.
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + angle * 0.5;
     const r = 1.5 + 0.5 * Math.sin(i * 2.3);
     lightData[i*LIGHT_STRIDE]   = Math.cos(a) * r;
     lightData[i*LIGHT_STRIDE+1] = Math.sin(a * 0.7) * 1.2;
     lightData[i*LIGHT_STRIDE+2] = Math.sin(a) * r;
-    lightData[i*LIGHT_STRIDE+4] = lightColors[i][0];
-    lightData[i*LIGHT_STRIDE+5] = lightColors[i][1];
-    lightData[i*LIGHT_STRIDE+6] = lightColors[i][2];
+    const [cr, cg, cb] = hsl((i / n) * 360, 1, 0.6);
+    lightData[i*LIGHT_STRIDE+4] = cr;
+    lightData[i*LIGHT_STRIDE+5] = cg;
+    lightData[i*LIGHT_STRIDE+6] = cb;
   }
   device.queue.writeBuffer(lightBuf, 0, lightData.subarray(0, n * LIGHT_STRIDE));
 

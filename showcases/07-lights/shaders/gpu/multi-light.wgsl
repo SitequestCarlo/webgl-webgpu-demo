@@ -1,10 +1,14 @@
 // =============================================================================
-// multi-light.wgsl – N Lichter via Storage Buffer (WebGPU, Showcase 07)
+// multi-light.wgsl – N Lichter via Uniform Buffer (WebGPU, Showcase 07)
 //
-// Vorteil gegenüber WebGL: Die Lichtanzahl ist dynamisch – kein Compile-Zeit-
-// Limit wie bei WebGL-Uniform-Arrays. Neue Lichter können zur Laufzeit
-// hinzugefügt werden ohne Shader-Neucompilierung.
+// Uniform Buffer statt Storage Buffer: identische Constant-Cache-Nutzung wie
+// WebGLs uniform-Arrays. Broadcast-Read-Muster im Fragment-Shader profitiert
+// vom dedizierten Constant-Cache der GPU.
+// MAX_LIGHTS muss als Compile-Zeit-Konstante bekannt sein (wie bei WebGL);
+// die aktive Lichtanzahl wird per scene.numLights zur Laufzeit gesteuert.
 // =============================================================================
+
+const MAX_LIGHTS: u32 = 1024u;
 
 // Ein Licht: Position + Farbe (je vec3 + 4-Byte-Padding für 16-Byte-Alignment)
 struct Light {
@@ -12,6 +16,11 @@ struct Light {
     _p0:   f32,
     color: vec3<f32>,
     _p1:   f32,
+}
+
+// Wrapper-Struct nötig, damit ein fixed-size Array als var<uniform> deklariert werden kann.
+struct LightsUB {
+    data: array<Light, MAX_LIGHTS>,
 }
 
 struct Scene {
@@ -26,8 +35,8 @@ struct Scene {
     _p:        u32,
 }
 
-@group(0) @binding(0) var<uniform>       scene:  Scene;
-@group(0) @binding(1) var<storage, read> lights: array<Light>;  // Dynamisches Array!
+@group(0) @binding(0) var<uniform> scene:     Scene;
+@group(0) @binding(1) var<uniform> lightsBuf: LightsUB;
 
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -52,11 +61,11 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
 
     var col = vec3<f32>(scene.ambient * 0.5);  // Ambient-Beitrag
 
-    // Loop über alle Lichter – Laufzeit-N, kein Compile-Zeit-Limit!
+    // Loop über alle Lichter – aktive Anzahl per scene.numLights gesteuert.
     for (var i = 0u; i < scene.numLights; i++) {
-        let L   = normalize(lights[i].pos - in.wp);
+        let L   = normalize(lightsBuf.data[i].pos - in.wp);
         let H   = normalize(L + V);
-        let d   = length(lights[i].pos - in.wp);
+        let d   = length(lightsBuf.data[i].pos - in.wp);
 
         // Quadratische Abschwächung (physikalisch korrekt)
         let att = 1.0 / (1.0 + 0.09 * d + 0.032 * d * d);
@@ -65,8 +74,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         let spec = pow(max(dot(N, H), 0.0), scene.shininess);
 
         // Feste Materialfarbe (violett), skaliert mit Lichtfarbe
-        col += att * (diff * vec3<f32>(0.55, 0.17, 0.51) * lights[i].color
-                    + spec * lights[i].color);
+        col += att * (diff * vec3<f32>(0.55, 0.17, 0.51) * lightsBuf.data[i].color
+                    + spec * lightsBuf.data[i].color);
     }
     return vec4<f32>(col, 1.0);
 }
