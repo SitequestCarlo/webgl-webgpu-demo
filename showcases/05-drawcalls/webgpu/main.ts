@@ -147,14 +147,7 @@ async function render(now: number): Promise<void> {
   sceneData[44] = 32; // shininess
   device.queue.writeBuffer(sceneUB, 0, sceneData);
 
-  // Swapchain-Textur VOR der CPU-Messung holen: getCurrentTexture() kann durch
-  // Present-Back-Pressure blockieren; das ist kein API-Overhead und würde die
-  // CPU-Zeit verfälschen.
-  const colorView = context.getCurrentTexture().createView();
-
-  // MESSUNG: N Draw-Calls per Command-Buffer aufzeichnen + submit.
-  // cpuTimer misst den reinen CPU-/API-Overhead (Record+Submit), NICHT die GPU-Zeit.
-  cpuTimer.begin();
+  // Transformationen VOR cpuTimer durchführen (nicht API-Overhead)
   const floatsPerDraw = DRAW_UNIFORM_SIZE / 4;
   for (let i = 0; i < n; i++) {
     mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
@@ -163,6 +156,15 @@ async function render(now: number): Promise<void> {
     mat3ToMat4Array(normalM3, normalM4, 0);
     writeDrawUniform(drawData, i * floatsPerDraw, model as Float32Array, normalM4, [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]]);
   }
+
+  // Swapchain-Textur VOR der CPU-Messung holen: getCurrentTexture() kann durch
+  // Present-Back-Pressure blockieren; das ist kein API-Overhead und würde die
+  // CPU-Zeit verfälschen.
+  const colorView = context.getCurrentTexture().createView();
+
+  // MESSUNG: N Draw-Calls per Command-Buffer aufzeichnen + submit.
+  // cpuTimer misst den reinen API-Overhead (writeBuffer + Record+Submit), NICHT die Matrix-Math oder GPU-Zeit.
+  cpuTimer.begin();
   device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
 
   // Command-Buffer zusammensetzen: N setBindGroup + drawIndexed, dann 1 submit()

@@ -146,17 +146,27 @@ async function render(now: number): Promise<void> {
 
   const n = Math.round(params.n);
 
-  // MESSUNG: N × {Matrizen-Update + 3 Uniform-Calls + drawElements}
-  // cpuTimer misst die reine JS-seitige Arbeit (ohne GPU-Wartezeit).
-  cpuTimer.begin();
-  gpuTimer.begin();
+  // Transformationen VOR cpuTimer durchführen (nicht API-Overhead)
+  const models = new Array<Float32Array>(n);
+  const normalMats = new Array<Float32Array>(n);
+  const colors = new Array<[number,number,number]>(n);
   for (let i = 0; i < n; i++) {
     mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
     mat4.rotateY(model, model, angle + i * 0.05);
     mat3.normalFromMat4(normalMat, model);
-    gl.uniformMatrix4fv(U.uModel!, false, model);
-    gl.uniformMatrix3fv(U.uNormalMatrix!, false, normalMat);
-    gl.uniform3fv(U.uColor!, [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]]);
+    models[i] = new Float32Array(model);
+    normalMats[i] = new Float32Array(normalMat);
+    colors[i] = [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]];
+  }
+
+  // MESSUNG: N × {3 Uniform-Calls + drawElements}
+  // cpuTimer misst nur den API-Overhead (ohne Matrix-Math).
+  cpuTimer.begin();
+  gpuTimer.begin();
+  for (let i = 0; i < n; i++) {
+    gl.uniformMatrix4fv(U.uModel!, false, models[i]);
+    gl.uniformMatrix3fv(U.uNormalMatrix!, false, normalMats[i]);
+    gl.uniform3fv(U.uColor!, colors[i]);
     gl.drawElements(gl.TRIANGLES, cube.indexCount, gl.UNSIGNED_INT, 0);
   }
   gpuTimer.end();
