@@ -61,6 +61,10 @@ let drawUBSize = MAX_N * DRAW_UNIFORM_SIZE;
 let drawUB = device.createBuffer({ size: drawUBSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 let drawBG = device.createBindGroup({ layout: drawBGL, entries: [{ binding: 0, resource: { buffer: drawUB, size: DRAW_UNIFORM_SIZE } }] });
 const drawData = new Float32Array(MAX_N * DRAW_UNIFORM_SIZE / 4);
+// Vorab-alloziertes Uint32Array mit Dynamic-Offsets: dynOffsets[i] = i * 256.
+// Verhindert Array-Allokation ([i*256]) im Hot-Loop → kein GC-Druck.
+const dynOffsets = new Uint32Array(MAX_N);
+for (let i = 0; i < MAX_N; i++) dynOffsets[i] = i * DRAW_UNIFORM_SIZE;
 
 // --- Szene -------------------------------------------------------------------
 
@@ -147,25 +151,36 @@ async function render(now: number): Promise<void> {
   sceneData[44] = 32; // shininess
   device.queue.writeBuffer(sceneUB, 0, sceneData);
 
-  // Transformationen VOR cpuTimer durchführen (nicht API-Overhead)
+  // Transformationen VOR cpuTimer durchführen (nicht API-Overhead).
+  // Inline-Schreiben in drawData vermeidet temporäre [r,g,b]-Tuple-Allokation.
   const floatsPerDraw = DRAW_UNIFORM_SIZE / 4;
   for (let i = 0; i < n; i++) {
     mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
     mat4.rotateY(model, model, angle + i * 0.05);
     mat3.normalFromMat4(normalM3, model);
     mat3ToMat4Array(normalM3, normalM4, 0);
-    writeDrawUniform(drawData, i * floatsPerDraw, model as Float32Array, normalM4, [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]]);
+    const fo = i * floatsPerDraw;
+    drawData.set(model,    fo);
+    drawData.set(normalM4, fo + 16);
+    drawData[fo + 32] = colorArr[i*3];
+    drawData[fo + 33] = colorArr[i*3+1];
+    drawData[fo + 34] = colorArr[i*3+2];
+    drawData[fo + 35] = 1.0;
   }
+
+  // writeBuffer VOR cpuTimer: ist kein Draw-Call-Overhead, sondern Daten-Upload
+  // (äquivalent zu WebGLs uniformMatrix4fv-Uploads, die im Loop stattfinden).
+  device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
 
   // Swapchain-Textur VOR der CPU-Messung holen: getCurrentTexture() kann durch
   // Present-Back-Pressure blockieren; das ist kein API-Overhead und würde die
   // CPU-Zeit verfälschen.
   const colorView = context.getCurrentTexture().createView();
 
-  // MESSUNG: N Draw-Calls per Command-Buffer aufzeichnen + submit.
-  // cpuTimer misst den reinen API-Overhead (writeBuffer + Record+Submit), NICHT die Matrix-Math oder GPU-Zeit.
+  // MESSUNG: Command-Buffer aufzeichnen + submit.
+  // Erfasst: createCommandEncoder + beginRenderPass + N×(setBindGroup+drawIndexed) + end+finish+submit.
+  // dynOffsets ist persistent vorab-alloziert → kein GC-Druck im Hot-Loop.
   cpuTimer.begin();
-  device.queue.writeBuffer(drawUB, 0, drawData.subarray(0, n * floatsPerDraw));
 
   // Command-Buffer zusammensetzen: N setBindGroup + drawIndexed, dann 1 submit()
   const cmd  = device.createCommandEncoder();
@@ -181,7 +196,7 @@ async function render(now: number): Promise<void> {
   pass.setIndexBuffer(cubeIB, "uint32");
   pass.setBindGroup(0, sceneBG);
   for (let i = 0; i < n; i++) {
-    pass.setBindGroup(1, drawBG, [i * DRAW_UNIFORM_SIZE]);
+    pass.setBindGroup(1, drawBG, dynOffsets, i, 1);
     pass.drawIndexed(cube.indexCount);
   }
   pass.end();

@@ -62,8 +62,11 @@ mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
 
 // N Objekte: Positionen in einem 3D-Raster, Farben aus HSL-Spektrum
 const MAX_N = 50000;
-const posArr   = new Float32Array(MAX_N * 3);
-const colorArr = new Float32Array(MAX_N * 3);
+const posArr     = new Float32Array(MAX_N * 3);
+const colorArr   = new Float32Array(MAX_N * 3);
+// Vorab-allozierte Puffer für Matrizen (kein GC-Druck im Render-Loop)
+const modelBuf   = new Float32Array(MAX_N * 16);
+const normalBuf  = new Float32Array(MAX_N * 9);
 
 function rebuildObjects(n: number): void {
   const side = Math.ceil(Math.cbrt(n));
@@ -146,27 +149,25 @@ async function render(now: number): Promise<void> {
 
   const n = Math.round(params.n);
 
-  // Transformationen VOR cpuTimer durchführen (nicht API-Overhead)
-  const models = new Array<Float32Array>(n);
-  const normalMats = new Array<Float32Array>(n);
-  const colors = new Array<[number,number,number]>(n);
+  // Transformationen VOR cpuTimer durchführen (nicht API-Overhead).
+  // modelBuf/normalBuf sind persistent vorab-alloziert → kein GC-Druck.
   for (let i = 0; i < n; i++) {
     mat4.fromTranslation(model, [posArr[i*3], posArr[i*3+1], posArr[i*3+2]]);
     mat4.rotateY(model, model, angle + i * 0.05);
     mat3.normalFromMat4(normalMat, model);
-    models[i] = new Float32Array(model);
-    normalMats[i] = new Float32Array(normalMat);
-    colors[i] = [colorArr[i*3], colorArr[i*3+1], colorArr[i*3+2]];
+    modelBuf.set(model, i * 16);
+    normalBuf.set(normalMat, i * 9);
   }
 
   // MESSUNG: N × {3 Uniform-Calls + drawElements}
   // cpuTimer misst nur den API-Overhead (ohne Matrix-Math).
+  // subarray() erzeugt Views (keine Kopien, kein GC-Druck).
   cpuTimer.begin();
   gpuTimer.begin();
   for (let i = 0; i < n; i++) {
-    gl.uniformMatrix4fv(U.uModel!, false, models[i]);
-    gl.uniformMatrix3fv(U.uNormalMatrix!, false, normalMats[i]);
-    gl.uniform3fv(U.uColor!, colors[i]);
+    gl.uniformMatrix4fv(U.uModel!, false, modelBuf.subarray(i * 16, i * 16 + 16));
+    gl.uniformMatrix3fv(U.uNormalMatrix!, false, normalBuf.subarray(i * 9, i * 9 + 9));
+    gl.uniform3fv(U.uColor!, colorArr.subarray(i * 3, i * 3 + 3));
     gl.drawElements(gl.TRIANGLES, cube.indexCount, gl.UNSIGNED_INT, 0);
   }
   gpuTimer.end();
