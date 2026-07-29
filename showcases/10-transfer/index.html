@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+  <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>10 · Buffer Transfer – WebGL vs WebGPU</title>
+  <style>
+    :root{color-scheme:dark;--bg:#14161a;--card:#1e2127;--border:#2c313a;--muted:#9aa2af;--accent:#4f9cff}
+    *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:#e6e8eb;line-height:1.5}
+    header{padding:3rem 1.5rem 1.5rem;max-width:860px;margin:0 auto}
+    h1{margin:0 0 .4rem;font-size:1.5rem}p.lead{color:var(--muted);margin:0 0 .2rem}
+    main{max-width:860px;margin:0 auto;padding:0 1.5rem 2rem;display:grid;gap:1rem;grid-template-columns:1fr 1fr}
+    a.card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;transition:border-color .15s,transform .15s}
+    a.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+    a.card h2{margin:0 0 .4rem;font-size:1.1rem}a.card p{color:var(--muted);font-size:.9rem;margin:0 0 .75rem}
+    .tag{display:inline-block;font-size:.72rem;padding:.1rem .5rem;border-radius:999px;background:#23303f;color:var(--accent);margin-right:.3rem}
+    a.back{display:inline-block;margin:2.5rem 1.5rem 0;color:var(--muted);text-decoration:none;font-size:.85rem}
+    a.back:hover{color:var(--accent)}
+    table{width:100%;border-collapse:collapse;font-size:.9rem;margin:1rem 0}
+    th,td{text-align:left;padding:.35rem .6rem;border-bottom:1px solid var(--border)}
+    th{color:var(--muted);font-weight:500}.better{color:#4ade80}.worse{color:#f87171}
+  </style></head>
+  <body>
+    <a class="back" href="../../index.html">&larr; Übersicht</a>
+    <header>
+      <h1>10 &middot; Buffer Transfer</h1>
+      <p class="lead">Puffer der Größe S zwischen CPU und GPU bewegen. Misst den <strong>Transfer-Durchsatz (GB/s)</strong>.</p>
+      <p class="lead">S über Dropdown (1 – 256 MB). Richtung: Upload · Readback · Roundtrip.</p>
+    </header>
+    <main>
+      <a class="card" href="./webgl/index.html">
+        <h2>WebGL2</h2>
+        <p>Upload: <code>bufferSubData</code> · Readback: <code>getBufferSubData</code> (<em>blockierend</em>).</p>
+        <div class="tag">WebGL2</div>
+      </a>
+      <a class="card" href="./webgpu/index.html">
+        <h2>WebGPU</h2>
+        <p>Upload: <code>writeBuffer</code> · Readback: <code>copyBufferToBuffer</code> → <code>mapAsync</code> (Staging).</p>
+        <div class="tag">WebGPU</div>
+      </a>
+    </main>
+    <div style="max-width:860px;margin:0 auto;padding:0 1.5rem 3rem">
+      <table>
+        <tr><th></th><th>WebGL2</th><th>WebGPU</th></tr>
+        <tr><td>Upload</td><td>bufferSubData + Fence</td><td>queue.writeBuffer</td></tr>
+        <tr><td>Readback</td><td class="worse">getBufferSubData (synchron, blockiert)</td><td class="better">mapAsync (asynchron, Staging-Buffer)</td></tr>
+        <tr><td>Metrik</td><td>GB/s aus Median-Latenz</td><td>GB/s aus Median-Latenz</td></tr>
+      </table>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>03 · Raytracer – WebGL vs. WebGPU</title>
+    <style>
+      :root { color-scheme: dark; --bg: #14161a; --card: #1e2127; --border: #2c313a; --muted: #9aa2af; --accent: #4f9cff; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: #e6e8eb; line-height: 1.5; }
+      header { padding: 3rem 1.5rem 1.5rem; max-width: 760px; margin: 0 auto; }
+      h1 { margin: 0 0 .5rem; font-size: 1.5rem; }
+      p.lead { color: var(--muted); margin: 0 0 .25rem; }
+      main { max-width: 760px; margin: 0 auto; padding: 0 1.5rem 4rem; display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+      a.card { display: block; text-decoration: none; color: inherit; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; transition: border-color .15s, transform .15s; }
+      a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+      a.card h2 { margin: 0 0 .4rem; font-size: 1.1rem; }
+      a.card p  { color: var(--muted); font-size: .9rem; margin: 0 0 .75rem; }
+      .tag { display: inline-block; font-size: .72rem; padding: .1rem .5rem; border-radius: 999px; background: #23303f; color: var(--accent); margin-right: .3rem; }
+      a.back { display: inline-block; margin: 2.5rem 1.5rem 0; color: var(--muted); text-decoration: none; font-size: .85rem; }
+      a.back:hover { color: var(--accent); }
+      table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: .5rem; }
+      th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
+      th { color: var(--muted); font-weight: 500; }
+    </style>
+  </head>
+  <body>
+    <a class="back" href="../../index.html">&larr; Übersicht</a>
+    <header>
+      <h1>03 &middot; Raytracer</h1>
+      <p class="lead">Identische Szene &mdash; Spiegel-Kugel, Glas-Kugel, diffuse Kugel, Schachbrett-Boden.</p>
+      <p class="lead">WebGL nutzt einen Fragment-Shader; WebGPU einen Compute-Shader mit Frame-Akkumulation.</p>
+    </header>
+    <main>
+      <a class="card" href="./webgl/index.html">
+        <h2>WebGL2</h2>
+        <p>Fragment-Shader-Raytracer. 5 Bounces pro Frame. Keine Akkumulation.</p>
+        <div class="tag">WebGL2</div>
+        <div class="tag">Fragment-Shader</div>
+      </a>
+      <a class="card" href="./webgpu/index.html">
+        <h2>WebGPU</h2>
+        <p>Compute-Shader-Raytracer. 7 Bounces. Progressive Anti-Aliasing durch Frame-Akkumulation.</p>
+        <div class="tag">WebGPU</div>
+        <div class="tag">Compute-Shader</div>
+        <div class="tag">Akkumulation</div>
+      </a>
+    </main>
+    <div style="max-width:760px;margin:0 auto;padding:0 1.5rem">
+      <table>
+        <tr><th></th><th>WebGL2</th><th>WebGPU</th></tr>
+        <tr><td>Shader-Typ</td><td>Fragment-Shader</td><td>Compute-Shader</td></tr>
+        <tr><td>Max. Bounces</td><td>5</td><td>7+</td></tr>
+        <tr><td>Frame-Akkumulation</td><td>Nein</td><td>Ja (progressives AA)</td></tr>
+        <tr><td>Speicher-Layout</td><td>Uniforms (begrenzt)</td><td>Storage-Buffer (flexibel)</td></tr>
+        <tr><td>BVH / komplexe Szenen</td><td>Schwer / unmöglich</td><td>Compute-BVH möglich</td></tr>
+      </table>
+    </div>
+  </body>
+</html>
